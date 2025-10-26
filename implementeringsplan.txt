@@ -1,0 +1,102 @@
+🔹 IMPLEMENTERINGSPLAN
+1. Bokse skal kunne udvide sig med tekst
+
+Ændring af: Editor.tsx
+
+Fjern faste højder på tekstfelter (vh/px).
+
+Sæt textarea til automatisk højde → onInput justerer e.target.style.height.
+
+Gør dette i alle tekstfelter (Input, Trin, Output, Effekter).
+
+2. Fjernelse af enkelt-kasser
+
+Ændring af: Editor.tsx
+
+Tilføj lille “🗑️”-ikon i hver boks.
+
+Når brugeren klikker, fjernes den boks (eller markeres som skjult).
+
+Gem status i projektets doc-objekt.
+
+3. Fjernelse af rækker
+
+Ændring af: Editor.tsx
+
+Tilføj lille “vis/skjul”-knap ved hver rækketitel (“Tid & ansvar”, “Antagelser” osv.).
+
+Når rækken skjules, vises dens felter ikke.
+
+Tilføj rowVisibility i doc.
+
+4. Flytning af trin
+
+Ændring af: Editor.tsx
+
+Implementér drag-and-drop for hele trin (brug @dnd-kit/core).
+
+Sørg for, at rækkefølgen gemmes i doc.steps.
+
+5. Farveskift og tekstformatering
+
+Ændring af: Editor.tsx
+
+Erstat textarea-felter med en Quill-editor.
+
+Lav en custom værktøjslinje direkte i boksen med:
+
+Fed / Kursiv / Punktopstilling
+
+Farvevælger (ændrer baggrundsfarve for boksen)
+
+Slet-knap (se punkt 2)
+
+6. Fortryd-knap
+
+Ændring af: Topbar.tsx og Editor.tsx
+
+I Editor.tsx: tilføj historik-array (før/efter patch()-opdatering).
+
+I Topbar.tsx: tilføj “↶ Fortryd”-knap, der kalder onUndo().
+
+7. Deling via mail
+
+Ændring af: Editor.tsx
+
+Tilføj “Del”-knap i topbaren → åbner modal.
+
+Indtast mail → søg i Firestore-samling usersPublic.
+
+Hvis bruger findes → vis displayName og tilføj til doc.sharedWith.
+
+Hvis ikke → gem e-mail som invitation (kan håndteres senere).
+
+8. Eksport til PDF
+
+Oprettelse af: utils/exportPDF.ts
+
+Brug html2canvas + jspdf til at eksportere hele modellen.
+
+Tilføj PDF-knap i topbaren ved siden af “Del”.
+
+9. Admin-del
+
+Oprettelse af: routes/Admin.tsx
+
+Viser liste over brugere (users-samling).
+
+Funktioner:
+
+Tilføj/fjern bruger
+
+Ændr rolle
+
+Vis aktive brugere
+
+10. Finpudsning og test
+
+Gennemgå lagring (Firestore + localStorage).
+
+Sørg for, at sletning/fortryd/deling ikke konflikter.
+
+Visuelle småjusteringer (afstand, knapper, tekststørrelser).
