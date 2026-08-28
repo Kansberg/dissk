@@ -1,0 +1,144 @@
+.mini-editor-page {
+  --mini-brand: #03424f;
+  --mini-text: #17343a;
+  --mini-muted: #687b80;
+  width: 100%;
+  min-height: 100vh;
+  background: #edf3f3;
+  color: var(--mini-text);
+}
+
+.mini-editor-page *, .mini-editor-page *::before, .mini-editor-page *::after { box-sizing: border-box; }
+
+.mini-editor-toolbar {
+  position: sticky;
+  z-index: 80;
+  top: 56px;
+  min-height: 64px;
+  padding: 9px 12px 9px 0;
+  border-bottom: 1px solid #d5e0e2;
+  background: rgba(255, 255, 255, .96);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.mini-icon-button {
+  border: 0;
+  background: transparent;
+  color: var(--mini-brand);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 750;
+  padding-left: 8px;
+}
+
+.mini-title-wrap { min-width: 220px; flex: 1; display: block; }
+.mini-title-wrap input { width: 100%; border: 0; padding: 0; background: transparent; color: var(--mini-text); font: 800 17px/1.3 system-ui, sans-serif; outline: 0; }
+
+.mini-save-state { min-width: 105px; color: #60777c; display: flex; align-items: center; justify-content: flex-end; gap: 7px; font-size: 12px; font-weight: 650; }
+.mini-save-state > span { width: 8px; height: 8px; border-radius: 50%; background: #31a46c; }
+.mini-save-state[data-state="dirty"] > span { background: #d39a26; }
+.mini-save-state[data-state="saving"] > span { background: #448fc4; animation: mini-pulse 1s infinite; }
+.mini-save-state[data-state="error"] { color: #a33c37; }
+.mini-save-state[data-state="error"] > span { background: #c84f49; }
+@keyframes mini-pulse { 50% { opacity: .35; } }
+
+.mini-toolbar-actions { display: flex; align-items: center; gap: 5px; }
+.mini-toolbar-actions button { width: 36px; height: 36px; padding: 0; border: 1px solid #d7e1e3; border-radius: 9px; background: #fff; color: var(--mini-brand); display: grid; place-items: center; }
+.mini-toolbar-actions button:hover { border-color: #82a8af; background: #f2f8f8; }
+.mini-toolbar-actions button.danger { color: #aa443f; }
+
+.mini-editor-main {
+  width: min(2400px, 100%);
+  margin: 0 auto;
+  padding: 24px clamp(14px, 1.5vw, 36px) 50px;
+}
+.mini-progress-panel { margin: 0 0 16px auto; width: min(360px, 100%); display: flex; align-items: center; gap: 13px; }
+.mini-progress-panel > div:first-child { min-width: 116px; display: grid; }
+.mini-progress-panel strong { font-size: 12px; }
+.mini-progress-panel span { color: var(--mini-muted); font-size: 10px; }
+.mini-progress-track { flex: 1; height: 7px; border-radius: 99px; background: #d6e1e2; overflow: hidden; }
+.mini-progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--mini-brand); transition: width .25s ease; }
+
+.mini-print-area { padding: 24px; border: 1px solid #d6e1e3; border-radius: 20px; background: #f8fbfb; box-shadow: 0 12px 40px rgba(20, 66, 75, .08); }
+.mini-print-title { display: none; margin-bottom: 20px; padding: 2px 4px; }
+.mini-print-title h1 { margin: 3px 0 0; color: var(--mini-text); font-size: clamp(25px, 3vw, 38px); line-height: 1.1; }
+
+.mini-field-card { --tone: #4c8993; --tone-soft: #e8f3f4; min-width: 0; border: 1px solid #cedcdf; border-top: 5px solid var(--tone); border-radius: 14px; background: #fff; overflow: hidden; box-shadow: 0 5px 16px rgba(20, 66, 75, .05); }
+.mini-field-card > header { min-height: 88px; padding: 15px 17px 11px; background: linear-gradient(135deg, var(--tone-soft), #fff 78%); display: flex; align-items: flex-start; gap: 10px; }
+.mini-field-dot { flex: 0 0 9px; width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: var(--tone); }
+.mini-field-card h2 { margin: 0; color: #19383e; font-size: 15px; line-height: 1.25; }
+.mini-field-card header p { margin: 5px 0 0; color: #62787d; font-size: 11px; line-height: 1.4; }
+.mini-field-card textarea { display: block; width: 100%; min-height: 150px; padding: 16px 18px; border: 0; border-top: 1px solid #e3eaeb; border-radius: 0; background: #fff; color: #203b41; font: 14px/1.55 system-ui, sans-serif; resize: none; outline: 0; overflow: hidden; }
+.mini-field-card textarea:focus { background: #fcfefe; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--tone) 35%, transparent); }
+.mini-field-card textarea::placeholder { color: #9aabad; }
+.tone-teal { --tone: #277b83; --tone-soft: #e2f2f2; }
+.tone-blue { --tone: #447ca5; --tone-soft: #eaf2f8; }
+.tone-amber { --tone: #b67a22; --tone-soft: #faf1df; }
+.tone-green { --tone: #3d8a68; --tone-soft: #e5f3ec; }
+.tone-violet { --tone: #755f9d; --tone-soft: #f0ebf7; }
+.tone-rose { --tone: #a65e6b; --tone-soft: #f8eaed; }
+
+.mini-workspace-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(250px, 23%); gap: 16px; align-items: stretch; }
+.mini-workspace-main { min-width: 0; display: grid; align-content: start; gap: 20px; }
+.mini-rationale { margin-bottom: 0; }
+.mini-rationale textarea { min-height: 130px; }
+.mini-strategy-cluster { position: relative; margin-bottom: 0; padding: 20px; border: 1px dashed #aac0c4; border-radius: 18px; background: #edf5f5; }
+.mini-cluster-heading { margin-bottom: 14px; display: flex; align-items: baseline; justify-content: space-between; gap: 20px; }
+.mini-cluster-heading > span { color: var(--mini-brand); font-size: 12px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+.mini-cluster-heading p { margin: 0; color: var(--mini-muted); font-size: 11px; }
+.mini-cluster-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.mini-cluster-grid .mini-field-card { position: relative; z-index: 1; }
+.mini-goal-signs textarea { min-height: 165px; }
+.mini-evaluation-rail { height: 100%; display: flex; flex-direction: column; }
+.mini-evaluation-rail > header { flex: 0 0 auto; }
+.mini-evaluation-rail textarea { flex: 1; min-height: 520px; height: auto !important; }
+
+.mini-editor-state { min-height: 100vh; padding: 100px 20px 30px; color: #516a70; display: grid; place-content: center; justify-items: center; text-align: center; }
+.mini-editor-state h1 { margin: 0 0 8px; color: var(--mini-text); font-size: 28px; }
+.mini-editor-state p { margin: 0 0 20px; }
+.mini-editor-state button { border: 0; border-radius: 9px; background: var(--mini-brand); color: #fff; }
+
+@media (max-width: 900px) {
+  .mini-editor-toolbar { flex-wrap: wrap; }
+  .mini-title-wrap { order: 3; flex-basis: 100%; padding: 5px 4px 0; }
+  .mini-cluster-grid { grid-template-columns: 1fr; }
+  .mini-workspace-layout { grid-template-columns: 1fr; }
+  .mini-evaluation-rail textarea { min-height: 180px; }
+  .mini-cluster-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
+}
+
+@media (max-width: 650px) {
+  .mini-editor-toolbar { padding-inline: 10px; }
+  .mini-icon-button span, .mini-save-state { display: none; }
+  .mini-toolbar-actions { margin-left: auto; }
+  .mini-toolbar-actions button { width: 33px; height: 33px; }
+  .mini-editor-main { padding: 16px 9px 30px; }
+  .mini-print-area { padding: 12px; border-radius: 14px; }
+  .mini-strategy-cluster { padding: 10px; }
+}
+
+@media print {
+  @page { size: A4 landscape; margin: 8mm; }
+  body { background: #fff !important; }
+  body * { visibility: hidden !important; }
+  .mini-print-area, .mini-print-area * { visibility: visible !important; }
+  .mini-print-area { position: absolute; inset: 0 auto auto 0; width: 100%; padding: 0; border: 0; box-shadow: none; background: #fff; }
+  .mini-print-title { display: block; margin-bottom: 10px; }
+  .mini-print-title h1 { font-size: 24px; }
+  .mini-field-card { break-inside: avoid; box-shadow: none; }
+  .mini-field-card > header { min-height: 62px; padding: 9px 11px; }
+  .mini-field-card header p { display: none; }
+  .mini-field-card textarea { min-height: 105px !important; padding: 9px 11px; font-size: 11px; }
+  .mini-workspace-layout { grid-template-columns: minmax(0, 1fr) minmax(190px, 23%); gap: 8px; }
+  .mini-workspace-main { gap: 8px; }
+  .mini-strategy-cluster { margin-bottom: 0; padding: 9px; }
+  .mini-cluster-heading { margin-bottom: 7px; }
+  .mini-cluster-heading p { display: none; }
+  .mini-cluster-grid { gap: 8px; }
+  .mini-evaluation-rail textarea { min-height: 100% !important; }
+}

@@ -1,0 +1,222 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function hasEmail() {
+      return signedIn() && request.auth.token.email is string;
+    }
+
+    function userEmail() {
+      return request.auth.token.email;
+    }
+
+    function currentUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function currentUserIsActive() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && currentUserData().get("disabled", false) == false
+        && (
+          !("archiveAt" in currentUserData())
+          || currentUserData().archiveAt > request.time
+        );
+    }
+
+    function isSuperadmin() {
+      return signedIn()
+        && (
+          request.auth.uid == "m2CRzyI1D7VpuIGDDu1t8CnoB0m2"
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && currentUserData().get("role", "user") == "superadmin"
+          )
+        );
+    }
+
+    function isActiveUser() {
+      return isSuperadmin() || currentUserIsActive();
+    }
+
+    function isAdmin() {
+      return isSuperadmin()
+        || (
+          currentUserIsActive()
+          && currentUserData().get("role", "user") == "admin"
+        );
+    }
+
+    function isDenied() {
+      return signedIn()
+        && (
+          exists(/databases/$(database)/documents/deniedAccess/$(request.auth.uid))
+          || (
+            hasEmail()
+            && exists(/databases/$(database)/documents/deniedAccess/$(userEmail()))
+          )
+        );
+    }
+
+    function hasMiniDisskAccess() {
+      return isSuperadmin()
+        || (
+          currentUserIsActive()
+          && exists(/databases/$(database)/documents/settings/miniDisskAccess)
+          && (
+            userEmail() in get(/databases/$(database)/documents/settings/miniDisskAccess).data.get("allowedEmails", [])
+            || currentUserData().get("groupId", "") in get(/databases/$(database)/documents/settings/miniDisskAccess).data.get("allowedGroupIds", [])
+          )
+        );
+    }
+
+    function ownsGlobalProject(projectId) {
+      return isActiveUser()
+        && get(/databases/$(database)/documents/projects/$(projectId)).data.owner == userEmail();
+    }
+
+    match /settings/access {
+      // Nye brugere skal kunne læse adgangslisten før deres users-dokument oprettes.
+      allow read: if signedIn() && !isDenied();
+      allow write: if isAdmin();
+    }
+
+    match /settings/miniDisskAccess {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      // Aktive brugere kan søge efter andre brugere ved deling. En bruger under
+      // login kan desuden hente sit eget UID- eller ældre e-mail-dokument.
+      allow get: if signedIn()
+        && (
+          isActiveUser()
+          || userId == request.auth.uid
+          || (hasEmail() && userId == userEmail())
+        );
+      allow list: if isActiveUser();
+
+      allow create: if isSuperadmin()
+        || (
+          isAdmin()
+          && request.resource.data.get("role", "user") != "superadmin"
+        )
+        || (
+          signedIn()
+          && !isDenied()
+          && userId == request.auth.uid
+          && request.resource.data.role == "user"
+          && request.resource.data.get("lifecycleManagedByAdmin", false) == false
+        )
+        || (
+          signedIn()
+          && !isDenied()
+          && userId == request.auth.uid
+          && hasEmail()
+          && exists(/databases/$(database)/documents/users/$(userEmail()))
+          && request.resource.data.role
+            == get(/databases/$(database)/documents/users/$(userEmail())).data.role
+          && request.resource.data.role in ["user", "admin"]
+        );
+
+      allow update: if isSuperadmin()
+        || (
+          isAdmin()
+          && userId != "m2CRzyI1D7VpuIGDDu1t8CnoB0m2"
+          && resource.data.get("role", "user") != "superadmin"
+          && request.resource.data.get("role", "user") != "superadmin"
+        )
+        || (
+          currentUserIsActive()
+          && userId == request.auth.uid
+          && request.resource.data.get("role", "user")
+            == resource.data.get("role", "user")
+          && request.resource.data.get("disabled", false)
+            == resource.data.get("disabled", false)
+          && request.resource.data.get("uid", request.auth.uid)
+            == resource.data.get("uid", request.auth.uid)
+          && request.resource.data.get("endDate", null)
+            == resource.data.get("endDate", null)
+          && request.resource.data.get("archiveAt", null)
+            == resource.data.get("archiveAt", null)
+          && request.resource.data.get("lifecycleManagedByAdmin", false)
+            == resource.data.get("lifecycleManagedByAdmin", false)
+          && request.resource.data.get("archiveDelayDays", null)
+            == resource.data.get("archiveDelayDays", null)
+          && request.resource.data.get("groupId", null)
+            == resource.data.get("groupId", null)
+          && request.resource.data.get("groupName", null)
+            == resource.data.get("groupName", null)
+        );
+
+      // Under login migreres eventuelle gamle users/{email}-dokumenter til UID.
+      allow delete: if isSuperadmin()
+        || (signedIn() && hasEmail() && userId == userEmail());
+
+      match /projects/{projectId} {
+        allow read: if isActiveUser()
+          && (userId == request.auth.uid || isSuperadmin());
+
+        allow write: if isActiveUser()
+          && (
+            userId == request.auth.uid
+            || ownsGlobalProject(projectId)
+          );
+      }
+
+      match /miniProjects/{projectId} {
+        allow read, create, update, delete: if hasMiniDisskAccess()
+          && userId == request.auth.uid;
+      }
+    }
+
+    match /archivedUsers/{userId} {
+      allow read, write: if isSuperadmin();
+    }
+
+    match /groups/{groupId} {
+      allow read, create, update, delete: if isAdmin();
+    }
+
+    match /deniedAccess/{accessKey} {
+      allow get: if signedIn()
+        && (
+          accessKey == request.auth.uid
+          || (hasEmail() && accessKey == userEmail())
+          || isSuperadmin()
+        );
+      allow list, create, update, delete: if isSuperadmin();
+    }
+
+    match /projects/{projectId} {
+      allow create: if isActiveUser()
+        && request.resource.data.owner == userEmail();
+
+      allow read: if isSuperadmin()
+        || (
+          currentUserIsActive()
+          && (
+            resource.data.owner == userEmail()
+            || resource.data.get("sharedWith", {}).get(userEmail(), null) != null
+          )
+        );
+
+      allow update, delete: if isSuperadmin()
+        || (currentUserIsActive() && resource.data.owner == userEmail());
+    }
+
+    match /projectAccess/{emailAddress} {
+      allow read: if isActiveUser()
+        && (emailAddress == userEmail() || isAdmin());
+
+      // projectAccess er et UI-indeks. Faktisk projektlæsning kontrolleres
+      // altid mod projects/{projectId}.sharedWith ovenfor.
+      allow write: if isActiveUser();
+    }
+  }
+}

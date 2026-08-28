@@ -100,3 +100,39 @@ Gennemgå lagring (Firestore + localStorage).
 Sørg for, at sletning/fortryd/deling ikke konflikter.
 
 Visuelle småjusteringer (afstand, knapper, tekststørrelser).
+
+
+
+1 - Ved colorchange på boks i inputcolumn og tegn i middlegrid skal jeg trykke to gange på fortryd før den faktisk fortryder.
+2 - Ved colorchange i tid og ansvar, antagelser og trin i ikke-output kan jeg ikke visuelt ændre tilbage.
+3 - Når jeg fortryder at have tastet et bogstav, fx hvis jeg skriver 123, så hopper cursoren tilbage til før 1 når jeg fortryder 1 gang (og sletter 3)
+4 - colorchange virker slet ikke i output i middlegrid - ingen af de 4.
+5 - Ved tekstredigering/ændring i effekter ryger den tilbage til den første i historikken, ikke den seneste. 
+6 - colorchange i LANGSIGTEDE effekter virker IKKE. Men den virker PERFEKT i kortsigtede...
+7 - Du har fucket effekterne op, så de nu ikke adskiller sig fra hinanden..
+Derfor har jeg ført effect-dokumentet tilbage til før..
+
+
+
+
+
+
+
+
+Okay..
+
+Nu til noget ret svært.. Forestiller jeg mig..
+
+
+Download-knappen skal virke..
+
+Og den skal kunne:
+
+Åbne en modal, hvor man kan vælge:
+Størrelse
+(A0-A4)
+
+Format 
+(Billede-format eller PDF)
+
+Og så skal den rendere indholdet af DISSK'en, altså det der er selve modellen.
