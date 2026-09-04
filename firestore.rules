@@ -162,11 +162,7 @@ service cloud.firestore {
         allow read: if isActiveUser()
           && (userId == request.auth.uid || isSuperadmin());
 
-        allow write: if isActiveUser()
-          && (
-            userId == request.auth.uid
-            || ownsGlobalProject(projectId)
-          );
+        allow write: if isActiveUser() && userId == request.auth.uid;
       }
 
       match /miniProjects/{projectId} {
@@ -195,19 +191,52 @@ service cloud.firestore {
 
     match /projects/{projectId} {
       allow create: if isActiveUser()
-        && request.resource.data.owner == userEmail();
+        && request.resource.data.owner == userEmail()
+        && request.resource.data.ownerUid == request.auth.uid;
 
       allow read: if isSuperadmin()
         || (
           currentUserIsActive()
           && (
             resource.data.owner == userEmail()
+            || resource.data.get("ownerUid", "") == request.auth.uid
             || resource.data.get("sharedWith", {}).get(userEmail(), null) != null
           )
         );
 
-      allow update, delete: if isSuperadmin()
-        || (currentUserIsActive() && resource.data.owner == userEmail());
+      allow update: if isSuperadmin()
+        || (
+          currentUserIsActive()
+          && (
+            resource.data.owner == userEmail()
+            || resource.data.get("sharedWith", {}).get(userEmail(), null) == "write"
+          )
+          && request.resource.data.owner == resource.data.owner
+          && (
+            request.resource.data.get("ownerUid", "") == resource.data.get("ownerUid", "")
+            || (
+              !("ownerUid" in resource.data)
+              && resource.data.owner == userEmail()
+              && request.resource.data.ownerUid == request.auth.uid
+            )
+          )
+          && (
+            resource.data.owner == userEmail()
+            || (
+              request.resource.data.owner == resource.data.owner
+              && request.resource.data.get("sharedWith", {}) == resource.data.get("sharedWith", {})
+            )
+          )
+        );
+
+      allow delete: if isSuperadmin()
+        || (
+          currentUserIsActive()
+          && (
+            resource.data.owner == userEmail()
+            || resource.data.get("ownerUid", "") == request.auth.uid
+          )
+        );
     }
 
     match /projectAccess/{emailAddress} {
@@ -216,7 +245,13 @@ service cloud.firestore {
 
       // projectAccess er et UI-indeks. Faktisk projektlæsning kontrolleres
       // altid mod projects/{projectId}.sharedWith ovenfor.
-      allow write: if isActiveUser();
+      allow write: if false;
+
+      match /projects/{projectId} {
+        allow read: if isActiveUser()
+          && (emailAddress == userEmail() || isAdmin());
+        allow create, update, delete: if ownsGlobalProject(projectId);
+      }
     }
   }
 }

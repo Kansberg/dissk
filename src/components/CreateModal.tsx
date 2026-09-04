@@ -34,13 +34,6 @@ export default function CreateModal({ userUid, userEmail, onClose }: Props) {
       const newRef = doc(collection(db, "projects"));
       const newProjectId = newRef.id;
 
-      await setDoc(newRef, {
-        title: "Unavngivet DISSK",
-        owner: userEmail,
-        createdAt: serverTimestamp(),
-        sharedWith: {},
-      });
-
       const steps = Array.from({ length: stepsCount }, (_, i) => ({
         id: String(i + 1),
         title: stepLabel === "tema" ? `Tema ${i + 1}` : `Trin ${i + 1}`,
@@ -49,11 +42,13 @@ export default function CreateModal({ userUid, userEmail, onClose }: Props) {
         assumption: "",
       }));
 
-      await setDoc(doc(db, "users", userUid, "projects", newProjectId), {
+      await setDoc(newRef, {
         title: "Unavngivet DISSK",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        owner: userEmail,
+        owner: userEmail.toLowerCase(),
+        ownerUid: userUid,
+        sharedWith: {},
 
         input: "",
         context: "",

@@ -4,6 +4,7 @@ import Home from "./routes/Home";
 import Editor from "./routes/Editor";
 import MiniDisskEditor from "./routes/MiniDisskEditor";
 import Admin from "./routes/Admin"; // ⬅️ NYT
+import TeamsEntry from "./routes/TeamsEntry";
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
 
         {/* 🔐 Admin-side */}
         <Route path="/admin" element={<Admin />} />
+        <Route path="/teams" element={<TeamsEntry />} />
 
         {/* fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />

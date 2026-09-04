@@ -9,6 +9,7 @@ import {
   getDocs,
   orderBy,
   query,
+  where,
   Timestamp,
   doc,
   getDoc,
@@ -77,25 +78,57 @@ export default function Home() {
     if (!user) return;
     setLoading(true);
     try {
-      const qOwn = query(
+      // Migrér ældre users/{uid}/projects til én autoritativ global projektfil.
+      const legacyOwnQuery = query(
         collection(db, "users", user.uid, "projects"),
         orderBy("updatedAt", "desc")
       );
-      const ownSnap = await getDocs(qOwn);
-      setOwnProjects(ownSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
+      const legacyOwnSnapshot = await getDocs(legacyOwnQuery);
+      for (const legacyProject of legacyOwnSnapshot.docs) {
+        const legacyData = legacyProject.data() as any;
+        if (legacyData.access && !legacyData.owner) continue;
+        const globalRef = doc(db, "projects", legacyProject.id);
+        const globalSnapshot = await getDoc(globalRef);
+        const globalData = globalSnapshot.data() || {};
+        await setDoc(globalRef, {
+          ...legacyData,
+          owner: globalData.owner || user.email?.toLowerCase() || "",
+          ownerUid: globalData.ownerUid || user.uid,
+          sharedWith: globalData.sharedWith || legacyData.sharedWith || {},
+        }, { merge: true });
+        await deleteDoc(legacyProject.ref);
+      }
+
+      const ownSnap = await getDocs(
+        query(collection(db, "projects"), where("ownerUid", "==", user.uid))
+      );
+      setOwnProjects(
+        ownSnap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) }))
+          .sort((a, b) => {
+            const left = a.updatedAt instanceof Timestamp ? a.updatedAt.toMillis() : Number(a.updatedAt || 0);
+            const right = b.updatedAt instanceof Timestamp ? b.updatedAt.toMillis() : Number(b.updatedAt || 0);
+            return right - left;
+          })
+      );
 
       const emailKey = user.email?.toLowerCase();
       const shared: RemoteDoc[] = [];
 
       if (emailKey) {
         try {
-          const accessRef = doc(db, "projectAccess", emailKey);
-          const accessSnap = await getDoc(accessRef);
-          const accessData = accessSnap.data() || {};
+          const accessSnap = await getDocs(collection(db, "projectAccess", emailKey, "projects"));
+          const projectIds = accessSnap.docs.map((snapshot) => snapshot.id);
+          const legacyAccess = await getDoc(doc(db, "projectAccess", emailKey));
+          projectIds.push(...Object.keys(legacyAccess.data() || {}));
 
-          for (const id of Object.keys(accessData)) {
-            const pSnap = await getDoc(doc(db, "projects", id));
-            if (pSnap.exists()) shared.push({ id, ...(pSnap.data() as any) });
+          for (const id of [...new Set(projectIds)]) {
+            try {
+              const pSnap = await getDoc(doc(db, "projects", id));
+              if (pSnap.exists()) shared.push({ id, ...(pSnap.data() as any) });
+            } catch {
+              // Et gammelt indeks kan pege på en deling, der siden er fjernet.
+            }
           }
         } catch (err) {
           console.warn("[Home] Kunne ikke hente delte projekter:", err);

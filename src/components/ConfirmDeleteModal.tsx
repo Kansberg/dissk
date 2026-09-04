@@ -1,5 +1,5 @@
 // src/components/ConfirmDeleteModal.tsx
-import { doc, deleteDoc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import { X } from "lucide-react";
 
@@ -17,7 +17,9 @@ export default function ConfirmDeleteModal({ projectId, userUid, onClose, onDele
     // 1️⃣ Hent projektet under den aktuelle bruger
     const ref = doc(db, "users", userUid, "projects", projectId);
     const snap = await getDoc(ref);
-    const data = snap.data();
+    const globalRef = doc(db, "projects", projectId);
+    const globalSnap = await getDoc(globalRef);
+    const data = globalSnap.data() || snap.data();
 
     if (!data) {
       console.warn("[DELETE] Projektet findes ikke:", projectId);
@@ -27,15 +29,15 @@ export default function ConfirmDeleteModal({ projectId, userUid, onClose, onDele
 
     // 2️⃣ Slet adgang for delte brugere (hvis delt)
     const sharedWith = data.sharedWith || {};
+    const batch = writeBatch(db);
     for (const email of Object.keys(sharedWith)) {
-      await updateDoc(doc(db, "projectAccess", email), {
-        [projectId]: null,
-      });
-      console.log("[DELETE] Fjernede adgang for:", email);
+      batch.delete(doc(db, "projectAccess", email, "projects", projectId));
     }
 
-    // 3️⃣ Slet selve projektet
-    await deleteDoc(ref);
+    // 3️⃣ Slet både den private ejerudgave og den fælles delingsudgave
+    if (snap.exists()) batch.delete(ref);
+    if (globalSnap.exists()) batch.delete(globalRef);
+    await batch.commit();
     console.log("[DELETE] Projekt slettet:", projectId);
 
     // 4️⃣ Luk modal og informer parent

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   doc,
   getDoc,
@@ -26,12 +26,13 @@ export default function ConfirmCopyModal({
 }: Props) {
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const autoCopyStarted = useRef(false);
 
   // Tjek om projektet er delt
   useEffect(() => {
     (async () => {
       try {
-        const ref = doc(db, "users", userUid, "projects", projectId);
+        const ref = doc(db, "projects", projectId);
         const snap = await getDoc(ref);
         const data = snap.data();
         const isShared = !!(data?.sharedWith && Object.keys(data.sharedWith).length > 0);
@@ -48,7 +49,7 @@ export default function ConfirmCopyModal({
     console.log("[COPY] Starter for", projectId, "copyShare:", copyShare);
 
     // 1️⃣ Hent original fra brugerens egen projektsamling
-    const originalRef = doc(db, "users", userUid, "projects", projectId);
+    const originalRef = doc(db, "projects", projectId);
     const originalSnap = await getDoc(originalRef);
     const original = originalSnap.data();
     if (!original) {
@@ -57,7 +58,7 @@ export default function ConfirmCopyModal({
     }
 
     // 2️⃣ Nyt projekt-id
-    const newRef = doc(collection(db, "users", userUid, "projects"));
+    const newRef = doc(collection(db, "projects"));
     const newProjectId = newRef.id;
 
     // 3️⃣ Byg fuld kopi af ALLE felter
@@ -65,28 +66,16 @@ export default function ConfirmCopyModal({
       ...original,
       id: newProjectId,
       title: `${original.title || "DISSK"} (kopi)`,
-      owner: userEmail,
+      owner: userEmail.toLowerCase(),
+      ownerUid: userUid,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       sharedWith: copyShare ? (original.sharedWith || {}) : {},
     };
 
-    // 4️⃣ Gem kopi både i brugerens projekter OG global /projects
+    // 4️⃣ Gem den nye model som præcis ét projektdokument
     await setDoc(newRef, newProject);
-    await setDoc(doc(db, "projects", newProjectId), newProject);
     console.log("[COPY] Fuldt projekt kopieret med id", newProjectId);
-
-    // 5️⃣ Opret pointer (så Home viser det korrekt)
-    await setDoc(
-      doc(db, "users", userUid, "projects", newProjectId),
-      {
-        access: "write",
-        title: newProject.title,
-        updatedAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
 
     // 6️⃣ Kopiér deling hvis valgt
     if (copyShare && original.sharedWith) {
@@ -94,9 +83,8 @@ export default function ConfirmCopyModal({
         original.sharedWith as Record<string, "read" | "write">
       )) {
         await setDoc(
-          doc(db, "projectAccess", email),
-          { [newProjectId]: access },
-          { merge: true }
+          doc(db, "projectAccess", email, "projects", newProjectId),
+          { access, projectId: newProjectId }
         );
         console.log("[COPY] Givet adgang til", email, "->", access);
       }
@@ -107,7 +95,10 @@ export default function ConfirmCopyModal({
   };
 
   if (!showModal) {
-    handleCopy(false);
+    if (!autoCopyStarted.current) {
+      autoCopyStarted.current = true;
+      void handleCopy(false);
+    }
     return null;
   }
 

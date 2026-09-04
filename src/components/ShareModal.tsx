@@ -4,9 +4,7 @@ import {
   doc,
   getDoc,
   getDocs,
-  setDoc,
-  updateDoc,
-  deleteField,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { X, Trash2 } from "lucide-react";
@@ -81,34 +79,21 @@ export default function ShareModal({ projectId, onClose }: Props) {
     const email = emailInput.trim().toLowerCase();
     if (!email) return;
 
-    const targetUser = allUsers.find(
-      (u) => u.email.toLowerCase() === email
-    );
-    const userUid = targetUser?.uid || null;
-
     try {
-      // 1️⃣ projectAccess
-      await setDoc(
-        doc(db, "projectAccess", email),
-        { [projectId]: role },
-        { merge: true }
-      );
+      const projectRef = doc(db, "projects", projectId);
+      const projectSnapshot = await getDoc(projectRef);
+      if (!projectSnapshot.exists()) throw new Error("Projektet findes ikke");
 
-      // 2️⃣ users/{uid}/projects
-      if (userUid) {
-        await setDoc(
-          doc(db, "users", userUid, "projects", projectId),
-          { access: role },
-          { merge: true }
-        );
-      }
-
-      // 3️⃣ projects/{projectId}/sharedWith
-      await setDoc(
-        doc(db, "projects", projectId),
-        { sharedWith: { [email]: role } },
-        { merge: true }
+      const projectData = projectSnapshot.data();
+      const batch = writeBatch(db);
+      batch.set(projectRef, {
+        sharedWith: { ...(projectData.sharedWith || {}), [email]: role },
+      }, { merge: true });
+      batch.set(
+        doc(db, "projectAccess", email, "projects", projectId),
+        { access: role, projectId }
       );
+      await batch.commit();
 
       const updated = { ...shared, [email]: role };
       setShared(updated);
@@ -126,17 +111,10 @@ const handleRemove = async (mail: string) => {
   delete newShared[mail];
 
   try {
-    // 1️⃣ skriv den opdaterede sharedWith-map tilbage på projektet
-    await setDoc(
-      doc(db, "projects", projectId),
-      { sharedWith: newShared },
-      { merge: true }
-    );
-
-    // 2️⃣ fjern adgang i projectAccess/{mail}/{projectId}
-    await updateDoc(doc(db, "projectAccess", mail), {
-      [projectId]: deleteField(),
-    });
+    const batch = writeBatch(db);
+    batch.set(doc(db, "projects", projectId), { sharedWith: newShared }, { merge: true });
+    batch.delete(doc(db, "projectAccess", mail, "projects", projectId));
+    await batch.commit();
 
     // 3️⃣ opdater UI
     setShared(newShared);

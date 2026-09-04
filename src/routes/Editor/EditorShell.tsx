@@ -3,9 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Topbar from "../../components/Topbar";
 import { useAuth } from "../../context/AuthContext";
-import { saveProject } from "../../utils/save";
+import { createOwnedProject, saveSharedProject } from "../../utils/save";
 import { db } from "../../firebase";
-import { doc as fsDoc, getDoc } from "firebase/firestore";
+import { deleteDoc, doc as fsDoc, getDoc } from "firebase/firestore";
 import CanvasPanel from "./CanvasPanel";
 import type { Doc } from "../../types/editor";
 import ShareModal from "../../components/ShareModal";
@@ -31,40 +31,6 @@ const LOCAL_KEY = "dissk_local_projects";
 const SESSION_KEY = "dissk_anon_session";
 
 /** ---------- Local Storage Helpers ---------- */
-const readLocal = (id: string): (Doc & { styles?: any; stepSymbols?: any }) | null => {
-  try {
-    const raw = localStorage.getItem(LOCAL_KEY) || "{}";
-    const all = JSON.parse(raw);
-    const stored = all[id];
-    if (!stored) return null;
-
-// 🔁 Migration: array → map (index → step.id)
-// 🔁 OGSÅ: objekt med numeriske keys ("0","1") → map (index → step.id)
-if ((stored as any).steps && Array.isArray((stored as any).steps)) {
-  const raw = (stored as any).stepSymbols;
-  if (Array.isArray(raw)) {
-    const map: Record<string, any> = {};
-    raw.forEach((val: any, index: number) => {
-      if (!val) return;
-      const step = (stored as any).steps[index];
-      if (step?.id) map[step.id] = val;
-    });
-    (stored as any).stepSymbols = map;
-} else if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-  // INGEN remap af numeriske keys — de kan være legitime step.id’er
-  (stored as any).stepSymbols = raw;
-}
-
-}
-
-
-    return stored as Doc & { styles?: any; stepSymbols?: any };
-  } catch {
-    return null;
-  }
-};
-
-
 const writeLocal = (doc: Doc & { styles?: any }) => {
   try {
     const raw = localStorage.getItem(LOCAL_KEY) || "{}";
@@ -165,6 +131,7 @@ export default function EditorShell() {
   const { user } = useAuth() as { user?: any };
 
   const [doc, setDoc] = useState<(Doc & { styles?: any }) | null>(null);
+  const [projectAccess, setProjectAccess] = useState<"owner" | "read" | "write">("owner");
   const [zoom, setZoom] = useState(1);
   const [zoomMode, setZoomMode] = useState<"auto" | "manual">("auto");
   const [showShare, setShowShare] = useState(false);
@@ -230,22 +197,27 @@ export default function EditorShell() {
     }
 
     const load = async () => {
-      const local = readLocal(projectId);
-      if (local) {
-        console.log("[EditorShell:load] Loaded from localStorage");
-        setDoc(local);
-        return;
-      }
-
       try {
         console.log("[EditorShell:load] Tjekker Firestore for projekt:", projectId);
-        const ref = fsDoc(db, "users", user.uid, "projects", projectId);
-        const snap = await getDoc(ref);
+        const ownRef = fsDoc(db, "users", user.uid, "projects", projectId);
+        const globalRef = fsDoc(db, "projects", projectId);
+        const [ownSnap, globalSnap] = await Promise.all([getDoc(ownRef), getDoc(globalRef)]);
+        const email = String(user.email || "").toLowerCase();
+        const globalData = globalSnap.exists() ? globalSnap.data() : null;
+        const isOwner = globalData?.ownerUid === user.uid
+          || String(globalData?.owner || "").toLowerCase() === email
+          || (!globalData && ownSnap.exists());
+        const sharedRole = globalData?.sharedWith?.[email];
+        const selectedData = isOwner && ownSnap.exists()
+          ? { ...globalData, ...ownSnap.data(), sharedWith: globalData?.sharedWith || {} }
+          : globalData;
 
-        if (snap.exists()) {
+        setProjectAccess(isOwner ? "owner" : sharedRole);
+
+        if (selectedData && (isOwner || sharedRole === "read" || sharedRole === "write")) {
           console.log("[EditorShell:load] Loaded from Firestore ✅");
 
-          const data = snap.data();
+          const data = selectedData;
 
 const normalized: any = {
   id: projectId,
@@ -303,7 +275,21 @@ if (typeof raw === "object") {
 
 
           setDoc(normalized);
-          writeLocal(normalized);
+          if (isOwner && ownSnap.exists()) {
+            const migration = globalSnap.exists()
+              ? saveSharedProject(projectId, {
+                  ...normalized,
+                  owner: globalData?.owner,
+                  ownerUid: globalData?.ownerUid || user.uid,
+                  sharedWith: globalData?.sharedWith || {},
+                })
+              : createOwnedProject(user.uid, email, projectId, normalized);
+            void migration
+              .then(() => deleteDoc(ownRef))
+              .catch((error) =>
+                console.error("[EditorShell:load] Kunne ikke migrere projektet", error)
+              );
+          }
           requestAnimationFrame(() => autoFit());
 
           return;
@@ -344,7 +330,7 @@ if (typeof raw === "object") {
 
     console.log("[EditorShell:migrate] Migrerer anonym DISSK til brugerprojekt", newId);
 
-    saveProject(user.uid, newId, migrated)
+    createOwnedProject(user.uid, user.email || "", newId, migrated)
       .then(() => {
         writeLocal(migrated);
         clearSessionDoc();
@@ -391,6 +377,7 @@ function normalizeNumericKeys(obj: any, parentKey?: string): any {
   const patch = (partial: Partial<Doc>) => {
     setDoc((prev) => {
       if (!prev) return prev;
+      if (projectAccess === "read") return prev;
 
 const next: Doc & { styles?: any } = deepMerge(prev, {
   ...partial,
@@ -444,9 +431,8 @@ const cleaned = normalizeNumericKeys(nextForNormalize);
 
 
       if (user?.uid) {
-        // LOGGET IND → Firestore + localStorage
-        writeLocal(cleaned);
-        saveProject(user.uid, cleaned.id, cleaned)
+        const save = saveSharedProject(cleaned.id, cleaned);
+        save
           .then(() => console.log("✅ gemt"))
           .catch((e) => console.error("❌ gem fejlede", e));
       } else {
@@ -468,6 +454,7 @@ const patchStepField = (
 ) => {
   setDoc((prev) => {
     if (!prev) return prev;
+    if (projectAccess === "read") return prev;
 
     // byg nye steps ud fra seneste prev (ikke fra lukket over "doc")
     const updatedSteps = (prev.steps || []).map((s) =>
@@ -528,14 +515,8 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
 
     // persist som i patch()
     if (user?.uid) {
-      writeLocal(cleaned);
-      import("firebase/firestore").then(({ updateDoc, doc }) => {
-        const ref = doc(db, "users", user.uid, "projects", cleaned.id);
-        updateDoc(ref, {
-          steps: normalizeNumericKeys(updatedSteps),
-          updatedAt: Date.now(),
-        }).catch((e) => console.error("❌ Direkte gem fejlede", e));
-      });
+      const save = saveSharedProject(cleaned.id, cleaned);
+      save.catch((e) => console.error("❌ Direkte gem fejlede", e));
     } else {
       writeSessionDoc(cleaned);
     }
@@ -626,7 +607,7 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
         overflow: "hidden",
       }}
     >
-      {showShare && user && (
+      {showShare && user && projectAccess === "owner" && (
         <ShareModal projectId={doc.id} onClose={() => setShowShare(false)} />
       )}
 
@@ -636,7 +617,7 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
         onRename={(newTitle) => patch({ title: newTitle })}
         doc={doc}
         patch={patch}
-        onShareClick={user ? () => setShowShare(true) : undefined}
+        onShareClick={user && projectAccess === "owner" ? () => setShowShare(true) : undefined}
         onToggleView={() =>
           patch({
             showTidAnsvar: !doc.showTidAnsvar,

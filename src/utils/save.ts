@@ -31,3 +31,32 @@ export async function saveProject(
   await setDoc(ref, payload, { merge: true });
   console.log("💾 Projekt gemt:", projectId);
 }
+
+export async function saveSharedProject(projectId: string, data: any): Promise<void> {
+  if (!projectId) return;
+  await setDoc(
+    doc(db, "projects", projectId),
+    {
+      ...data,
+      title: (data?.title ?? "").trim() || "Unavngivet DISSK",
+      updatedAt: serverTimestamp(),
+      styles: data?.styles ?? {},
+    },
+    { merge: true }
+  );
+}
+
+export async function createOwnedProject(
+  uid: string,
+  email: string,
+  projectId: string,
+  data: any
+): Promise<void> {
+  await setDoc(doc(db, "projects", projectId), {
+    ...data,
+    owner: email.toLowerCase(),
+    ownerUid: uid,
+    sharedWith: data?.sharedWith ?? {},
+    updatedAt: serverTimestamp(),
+  });
+}
