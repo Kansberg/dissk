@@ -7,6 +7,9 @@ import {
   signInWithPopup,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  signOut,
 } from "firebase/auth";
 
 import { useAuth } from "../context/AuthContext";
@@ -14,9 +17,11 @@ import { useAuth } from "../context/AuthContext";
 export default function LoginModal({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
+  const [confirmPwd, setConfirmPwd] = useState("");
   const [err, setErr] = useState("");
   const [info, setInfo] = useState("");
-  const [mode, setMode] = useState<"login" | "forgot">("login");
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<"login" | "forgot" | "signup">("login");
 
   const {
     authError,        // FEJL FRA AuthContext (fx adgang nægtet)
@@ -74,18 +79,54 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
   // EMAIL + PASSWORD LOGIN
   //
   const loginWithEmail = async () => {
+    if (busy) return;
+    setBusy(true);
     try {
       clearAuthError();
       setErr("");
-      await signInWithEmailAndPassword(auth, email, pwd);
+      setInfo("");
+      await signInWithEmailAndPassword(auth, email.trim(), pwd);
     } catch (e: any) {
-      //
-      // Her er almindelige Firebase fejl som:
-      // - "wrong-password"
-      // - "user-not-found"
-      // - "invalid-email"
-      //
-      setErr(e.message);
+      setErr(e.code === "auth/invalid-credential"
+        ? "E-mail eller adgangskode er forkert."
+        : "Login mislykkedes. Prøv igen.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const signUpWithEmail = async () => {
+    if (busy) return;
+    setErr("");
+    setInfo("");
+    if (pwd !== confirmPwd) {
+      setErr("Adgangskoderne er ikke ens.");
+      return;
+    }
+    setBusy(true);
+    try {
+      clearAuthError();
+      const result = await createUserWithEmailAndPassword(auth, email.trim(), pwd);
+      await sendEmailVerification(result.user);
+      await signOut(auth);
+      clearAuthError();
+      setPwd("");
+      setConfirmPwd("");
+      setMode("login");
+      setInfo("Brugeren er oprettet. Bekræft din e-mail via linket, vi har sendt, og log derefter ind.");
+    } catch (e: any) {
+      const messages: Record<string, string> = {
+        "auth/email-already-in-use": "E-mailen er allerede i brug. Log ind eller brug Glemt adgangskode.",
+        "auth/invalid-email": "Skriv en gyldig e-mailadresse.",
+        "auth/weak-password": "Adgangskoden er for svag. Brug en længere adgangskode.",
+        "auth/password-does-not-meet-requirements": "Adgangskoden opfylder ikke kravene. Brug en stærkere adgangskode.",
+        "auth/operation-not-allowed": "Oprettelse med e-mail er ikke aktiveret endnu.",
+        "auth/network-request-failed": "Kontrollér din internetforbindelse og prøv igen.",
+        "auth/too-many-requests": "Der er for mange forsøg. Vent lidt og prøv igen.",
+      };
+      setErr(messages[e.code] || "Brugeren kunne ikke oprettes. Prøv igen.");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -134,9 +175,11 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
 
         {/* EMAIL / PASSWORD */}
         {mode === "login" ? (
-          <>
+          <form style={styles.form} onSubmit={(event) => { event.preventDefault(); void loginWithEmail(); }}>
             <input
               type="email"
+              autoComplete="username"
+              required
               placeholder="E-mail"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -144,18 +187,31 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
             />
             <input
               type="password"
+              autoComplete="current-password"
+              required
               placeholder="Adgangskode"
               value={pwd}
               onChange={(e) => setPwd(e.target.value)}
               style={styles.input}
             />
-            <button style={styles.primaryBtn} onClick={loginWithEmail}>
+            <button type="submit" disabled={busy} style={styles.primaryBtn}>
               Log ind
             </button>
-            <button onClick={() => setMode("forgot")} style={styles.link}>
+            <button type="button" onClick={() => setMode("signup")} style={styles.link}>
+              Opret bruger med e-mail
+            </button>
+            <button type="button" onClick={() => setMode("forgot")} style={styles.link}>
               Glemt adgangskode?
             </button>
-          </>
+          </form>
+        ) : mode === "signup" ? (
+          <form style={styles.form} onSubmit={(event) => { event.preventDefault(); void signUpWithEmail(); }}>
+            <input type="email" autoComplete="username" required placeholder="E-mail" value={email} onChange={(event) => setEmail(event.target.value)} style={styles.input} />
+            <input type="password" autoComplete="new-password" required minLength={6} placeholder="Adgangskode (mindst 6 tegn)" value={pwd} onChange={(event) => setPwd(event.target.value)} style={styles.input} />
+            <input type="password" autoComplete="new-password" required minLength={6} placeholder="Gentag adgangskode" value={confirmPwd} onChange={(event) => setConfirmPwd(event.target.value)} style={styles.input} />
+            <button type="submit" disabled={busy} style={styles.primaryBtn}>Opret bruger</button>
+            <button type="button" onClick={() => setMode("login")} style={styles.link}>Har du allerede en bruger? Log ind</button>
+          </form>
         ) : (
           <>
             <input
@@ -225,6 +281,12 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     alignItems: "center",
     position: "relative",
+  },
+  form: {
+    width: "100%",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
   },
   close: {
     position: "absolute",

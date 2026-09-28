@@ -46,6 +46,7 @@ type UserDoc = {
   displayName: string;
   role: Role;
   disabled?: boolean;
+  hiddenFromAdmin?: boolean;
   lastLogin?: any;
   endDate?: any;
   archiveAt?: any;
@@ -168,9 +169,10 @@ export default function Admin() {
           archiveAt: data.archiveAt,
           groupId: data.groupId,
           groupName: data.groupName,
+          hiddenFromAdmin: data.hiddenFromAdmin === true,
         } as UserDoc;
       })
-      .filter((listedUser: UserDoc) => !listedUser.disabled && !isArchiveDue(listedUser.archiveAt));
+      .filter((listedUser: UserDoc) => !listedUser.hiddenFromAdmin && !listedUser.disabled && !isArchiveDue(listedUser.archiveAt));
 
     nextUsers.sort((a, b) => {
       const roleOrder = { superadmin: 0, admin: 1, user: 2 };
@@ -234,10 +236,12 @@ export default function Admin() {
           archivedAt: data.archivedAt,
           groupId: data.groupId,
           groupName: data.groupName,
+          hiddenFromAdmin: data.hiddenFromAdmin === true,
         } as UserDoc;
       });
-      nextArchive.sort((a: UserDoc, b: UserDoc) => a.email.localeCompare(b.email, "da"));
-      setArchivedUsers(nextArchive);
+      const visibleArchive = nextArchive.filter((listedUser: UserDoc) => !listedUser.hiddenFromAdmin);
+      visibleArchive.sort((a: UserDoc, b: UserDoc) => a.email.localeCompare(b.email, "da"));
+      setArchivedUsers(visibleArchive);
     } else {
       setArchivedUsers([]);
     }

@@ -53,16 +53,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (rawUser) => {
-      setAuthError(null);
-
       if (!rawUser) {
         setUser(null);
         return;
       }
 
-      // Firebase Auth is the login source of truth. Firestore metadata must not
-      // turn a valid auth session into a failed login.
-      setUser(rawUser);
+      setUser(null);
+      setAuthError(null);
 
       const emailLower = rawUser.email?.toLowerCase() ?? "";
       const domain = emailLower.split("@")[1] ?? "";
@@ -150,6 +147,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const hasRules = allowedDomains.length > 0 || allowedEmails.length > 0;
         const isAllowedEmail = emailLower !== "" && allowedEmails.includes(emailLower);
         const isAllowedDomain = domain !== "" && allowedDomains.includes(domain);
+        const backendApproval = await getDoc(doc(db, "backendApprovedUsers", rawUser.uid));
+        const isApproved = isAllowedEmail || isAllowedDomain || backendApproval.exists();
+        const usesPassword = rawUser.providerData.some((provider) => provider.providerId === "password");
+
+        if (!existingUserDocument && usesPassword && !rawUser.emailVerified) {
+          setAuthError("Bekræft din e-mailadresse, før du logger ind.");
+          return;
+        }
 
         if (disabled) {
           setUser(null);
@@ -161,13 +166,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           hasRules &&
           role !== "admin" &&
           role !== "superadmin" &&
-          !isAllowedEmail &&
-          !isAllowedDomain
+          !isApproved
         ) {
           setUser(null);
           setAuthError(
             "Din e-mailadresse har ikke adgang til dette vaerktoej. Kontakt en administrator, hvis du mener, det er en fejl."
           );
+          return;
+        }
+
+        if (!existingUserDocument && role !== "superadmin" && !isApproved) {
+          setAuthError("Din e-mailadresse har ikke adgang til dette værktøj. Kontakt en administrator, hvis du mener, det er en fejl.");
           return;
         }
 
@@ -183,6 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               photoURL: rawUser.photoURL || null,
               role,
               disabled,
+              ...(!existingUserDocument ? { hiddenFromAdmin: false } : {}),
               ...(endDate ? { endDate } : {}),
               ...(archiveAt ? { archiveAt } : {}),
               ...(archiveAt ? { archiveDelayDays: ARCHIVE_DELAY_DAYS } : {}),
@@ -197,9 +207,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } catch (err) {
           console.warn("[AuthContext] Could not update user metadata:", err);
+          if (!existingUserDocument) {
+            setAuthError("Kunne ikke færdiggøre login. Prøv igen senere.");
+            return;
+          }
         }
+        setUser(rawUser);
       } catch (err) {
         console.warn("[AuthContext] Firestore access check failed:", err);
+        setAuthError("Kunne ikke kontrollere adgangen. Prøv igen senere.");
       }
     });
 

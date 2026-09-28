@@ -18,10 +18,48 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function accessData() {
+      return get(/databases/$(database)/documents/settings/access).data;
+    }
+
+    function hasBackendApproval() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/backendApprovedUsers/$(request.auth.uid));
+    }
+
+    function isAllowedByAccessList() {
+      return hasEmail()
+        && exists(/databases/$(database)/documents/settings/access)
+        && (
+          userEmail().lower() in accessData().get("allowedEmails", [])
+          || userEmail().lower().split("@")[1] in accessData().get("allowedDomains", [])
+        );
+    }
+
+    function hasAccessRules() {
+      return exists(/databases/$(database)/documents/settings/access)
+        && (
+          accessData().get("allowedEmails", []).size() > 0
+          || accessData().get("allowedDomains", []).size() > 0
+        );
+    }
+
+    function hasApprovedIdentity() {
+      return request.auth.token.get("email_verified", false) == true
+        || request.auth.token.firebase.sign_in_provider in ["google.com", "microsoft.com"];
+    }
+
     function currentUserIsActive() {
       return signedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && currentUserData().get("disabled", false) == false
+        && !isDenied()
+        && (
+          !hasAccessRules()
+          || currentUserData().get("role", "user") in ["admin", "superadmin"]
+          || isAllowedByAccessList()
+          || hasBackendApproval()
+        )
         && (
           !("archiveAt" in currentUserData())
           || currentUserData().archiveAt > request.time
@@ -90,6 +128,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /backendApprovedUsers/{userId} {
+      allow get: if signedIn() && (userId == request.auth.uid || isSuperadmin());
+      allow list, create, update, delete: if isSuperadmin();
+    }
+
     match /users/{userId} {
       // Aktive brugere kan søge efter andre brugere ved deling. En bruger under
       // login kan desuden hente sit eget UID- eller ældre e-mail-dokument.
@@ -110,6 +153,11 @@ service cloud.firestore {
           signedIn()
           && !isDenied()
           && userId == request.auth.uid
+          && hasApprovedIdentity()
+          && (isAllowedByAccessList() || hasBackendApproval())
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.emailLower == userEmail().lower()
+          && request.resource.data.get("hiddenFromAdmin", false) == false
           && request.resource.data.role == "user"
           && request.resource.data.get("lifecycleManagedByAdmin", false) == false
         )
@@ -118,6 +166,7 @@ service cloud.firestore {
           && !isDenied()
           && userId == request.auth.uid
           && hasEmail()
+          && hasApprovedIdentity()
           && exists(/databases/$(database)/documents/users/$(userEmail()))
           && request.resource.data.role
             == get(/databases/$(database)/documents/users/$(userEmail())).data.role
@@ -152,6 +201,8 @@ service cloud.firestore {
             == resource.data.get("groupId", null)
           && request.resource.data.get("groupName", null)
             == resource.data.get("groupName", null)
+          && request.resource.data.get("hiddenFromAdmin", false)
+            == resource.data.get("hiddenFromAdmin", false)
         );
 
       // Under login migreres eventuelle gamle users/{email}-dokumenter til UID.

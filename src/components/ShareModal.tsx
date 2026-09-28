@@ -44,6 +44,7 @@ export default function ShareModal({ projectId, onClose }: Props) {
       const users: UserMeta[] = [];
       snap.forEach((d) => {
         const u = d.data();
+        if (u.hiddenFromAdmin === true) return;
         users.push({
           uid: u.uid || d.id,
           email: u.emailLower || u.email || "",
