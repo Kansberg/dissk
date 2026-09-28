@@ -26,6 +26,7 @@ import {
   type MiniDisskTextField,
 } from "../types/miniDissk";
 import { canUseMiniDissk } from "../utils/miniDisskAccess";
+import { queueRecoveryBackup } from "../utils/recoveryBackup";
 import "./MiniDisskEditor.css";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
@@ -84,6 +85,10 @@ export default function MiniDisskEditor() {
   const [showGuidance, setShowGuidance] = useState(true);
   const skipNextAutosave = useRef(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (miniDoc && accessState === "allowed") queueRecoveryBackup(miniDoc, "mini");
+  }, [miniDoc, accessState]);
 
   const projectRef = useMemo(() => {
     if (!user || !id) return null;

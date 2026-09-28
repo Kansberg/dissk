@@ -12,6 +12,7 @@ import ShareModal from "../../components/ShareModal";
 import type { DownloadOptions } from "../../components/DownloadModal";
 import { exportDissk } from "../../utils/exportDissk";
 import { EDITOR_THEME } from "./editorTheme";
+import { queueRecoveryBackup } from "../../utils/recoveryBackup";
 
 function deepMerge<T extends Record<string, any>>(base: T = {} as T, incoming: Partial<T> = {}): T {
   const out: any = Array.isArray(base) ? [...base] : { ...base };
@@ -104,6 +105,7 @@ const newDoc = (id: string): Doc & { styles: any } => {
 
 return {
   id,
+  createdAt: Date.now(),
   title: "Ny DISSK",
   input: "",
   steps: [newStep(1), newStep(2), newStep(3)],
@@ -141,6 +143,11 @@ export default function EditorShell() {
   const panelRef = useRef<HTMLDivElement>(null!);
   const midMarkerRef = useRef<HTMLTextAreaElement>(null!);
   const migratedRef = useRef(false);
+
+  useEffect(() => {
+    if (!doc || projectAccess === "read") return;
+    queueRecoveryBackup(doc, !user && id === "new" ? "anonymous" : "editor");
+  }, [doc, id, projectAccess, user]);
 
   const handleDownloadRequested = async (options: DownloadOptions) => {
     if (!panelRef.current) return;

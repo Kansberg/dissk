@@ -133,6 +133,16 @@ service cloud.firestore {
       allow list, create, update, delete: if isSuperadmin();
     }
 
+    // Recovery copies are written by the callable function with Admin SDK.
+    // Neither signed-in nor anonymous browser clients can read them.
+    match /recoveryBackups/{backupId}/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /recoveryUploadLimits/{userId} {
+      allow read, write: if false;
+    }
+
     match /users/{userId} {
       // Aktive brugere kan søge efter andre brugere ved deling. En bruger under
       // login kan desuden hente sit eget UID- eller ældre e-mail-dokument.

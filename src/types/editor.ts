@@ -22,6 +22,7 @@ export type StepSymbol = "left" | "right" | "both" | "cycle";
 
 export type Doc = {
   id: string;
+  createdAt?: number;
   title: string;
   input: string;
   steps: Step[];

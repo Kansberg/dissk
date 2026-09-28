@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase-admin/app";
+import { createHash } from "node:crypto";
 import {
   FieldValue,
   Timestamp,
@@ -7,6 +8,7 @@ import {
 import { logger } from "firebase-functions";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { HttpsError, onCall } from "firebase-functions/v2/https";
 
 initializeApp();
 
@@ -230,5 +232,170 @@ export const archiveExpiredUsers = onSchedule(
       migratedArchiveWindows,
       archivedUsers: archivedEmails.length,
     });
+  }
+);
+
+const RECOVERY_SOURCES = new Set(["anonymous", "editor", "legacyLocal", "mini"]);
+const RECOVERY_MAX_BYTES = 12 * 1024 * 1024;
+const RECOVERY_PART_CHARS = 120_000;
+
+function recoveryText(value: unknown, limit = 40_000): string {
+  const parts: string[] = [];
+  let length = 0;
+  const visit = (item: unknown, depth: number) => {
+    if (length >= limit || depth > 12) return;
+    if (typeof item === "string") {
+      const text = item.replace(/<[^>]*>/g, " ").trim();
+      if (text) {
+        const clipped = text.slice(0, limit - length);
+        parts.push(clipped);
+        length += clipped.length + 1;
+      }
+    } else if (Array.isArray(item)) {
+      item.forEach((child) => visit(child, depth + 1));
+    } else if (item && typeof item === "object") {
+      Object.entries(item).forEach(([key, child]) => {
+        if (!key.toLowerCase().includes("style")) visit(child, depth + 1);
+      });
+    }
+  };
+  visit(value, 0);
+  return parts.join(" ").slice(0, limit);
+}
+
+function recoveryParts(content: string): string[] {
+  const parts: string[] = [];
+  for (let offset = 0; offset < content.length;) {
+    let end = Math.min(offset + RECOVERY_PART_CHARS, content.length);
+    const code = content.charCodeAt(end - 1);
+    if (end < content.length && code >= 0xD800 && code <= 0xDBFF) end -= 1;
+    parts.push(content.slice(offset, end));
+    offset = end;
+  }
+  return parts;
+}
+
+export const saveRecoveryBackup = onCall(
+  { region: REGION, memory: "512MiB", timeoutSeconds: 120, maxInstances: 10 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Login is required for recovery backup.");
+
+    const data = request.data as Record<string, unknown> | null;
+    const installationId = data?.installationId;
+    const projectId = data?.projectId;
+    const snapshotId = data?.snapshotId;
+    const source = data?.source;
+    const content = data?.content;
+    const capturedAtClient = data?.capturedAtClient;
+    const createdAtClient = data?.createdAtClient;
+
+    if (
+      typeof installationId !== "string" || !/^[a-f0-9-]{36}$/i.test(installationId)
+      || typeof projectId !== "string" || !projectId || projectId.length > 160
+      || typeof snapshotId !== "string" || !/^[a-f0-9-]{36}$/i.test(snapshotId)
+      || typeof source !== "string" || !RECOVERY_SOURCES.has(source)
+      || typeof content !== "string"
+      || typeof capturedAtClient !== "number" || !Number.isFinite(capturedAtClient)
+      || typeof createdAtClient !== "number" || !Number.isFinite(createdAtClient)
+    ) {
+      throw new HttpsError("invalid-argument", "Invalid recovery backup.");
+    }
+
+    const byteLength = Buffer.byteLength(content, "utf8");
+    if (!byteLength || byteLength > RECOVERY_MAX_BYTES) {
+      throw new HttpsError("invalid-argument", "Recovery backup exceeds the size limit.");
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      throw new HttpsError("invalid-argument", "Recovery backup contains invalid JSON.");
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new HttpsError("invalid-argument", "Recovery backup must contain a document.");
+    }
+
+    const now = Date.now();
+    if (capturedAtClient < Date.UTC(2020, 0, 1) || capturedAtClient > now + 86_400_000) {
+      throw new HttpsError("invalid-argument", "Invalid capture time.");
+    }
+
+    const actorUid = request.auth.uid;
+    const backupId = createHash("sha256")
+      .update(`${actorUid}\n${installationId}\n${source}\n${projectId}`)
+      .digest("hex");
+    const backupRef = db.collection("recoveryBackups").doc(backupId);
+    const snapshotRef = backupRef.collection("snapshots").doc(snapshotId);
+    const hash = createHash("sha256").update(content).digest("hex");
+    const existing = await snapshotRef.get();
+    const alreadyComplete = existing.exists && existing.get("complete") === true;
+    if (alreadyComplete) {
+      if (existing.get("sha256") !== hash) {
+        throw new HttpsError("already-exists", "Recovery snapshot ID is already in use.");
+      }
+    }
+
+    if (!alreadyComplete) {
+      const rateRef = db.collection("recoveryUploadLimits").doc(actorUid);
+      await db.runTransaction(async (transaction) => {
+        const rate = await transaction.get(rateRef);
+        const day = new Date(now).toISOString().slice(0, 10);
+        const count = rate.exists && rate.get("day") === day ? Number(rate.get("count") || 0) : 0;
+        if (count >= 2_000) throw new HttpsError("resource-exhausted", "Recovery upload limit reached.");
+        transaction.set(rateRef, { day, count: count + 1, updatedAt: FieldValue.serverTimestamp() });
+      });
+
+      const chunks = recoveryParts(content);
+      await snapshotRef.set({
+        complete: false,
+        sha256: hash,
+        partCount: chunks.length,
+        byteLength,
+        capturedAtClient,
+        uploadedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      for (let offset = 0; offset < chunks.length; offset += 12) {
+        const batch = db.batch();
+        chunks.slice(offset, offset + 12).forEach((part, index) => {
+          batch.set(snapshotRef.collection("parts").doc(String(offset + index).padStart(4, "0")), { text: part });
+        });
+        await batch.commit();
+      }
+      await snapshotRef.update({ complete: true, completedAt: FieldValue.serverTimestamp() });
+    }
+
+    const document = parsed as Record<string, unknown>;
+    const title = String(document.title || document.name || "Unavngivet DISSK").slice(0, 300);
+    const authEmail = typeof request.auth.token.email === "string"
+      ? request.auth.token.email.toLowerCase() : null;
+    const isAnonymous = request.auth.token.firebase?.sign_in_provider === "anonymous";
+    await db.runTransaction(async (transaction) => {
+      const current = await transaction.get(backupRef);
+      if (current.exists && Number(current.get("latestClientCapturedAt") || 0) > capturedAtClient) return;
+      transaction.set(backupRef, {
+        title,
+        searchText: recoveryText(document),
+        source,
+        projectId,
+        installationId,
+        authUid: actorUid,
+        authEmail,
+        anonymous: isAnonymous,
+        createdAtClient,
+        latestClientCapturedAt: capturedAtClient,
+        latestSnapshotId: snapshotId,
+        byteLength,
+        firstSeenAt: current.exists ? current.get("firstSeenAt") : FieldValue.serverTimestamp(),
+        lastSeenAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    });
+
+    const versions = await backupRef.collection("snapshots").orderBy("completedAt", "desc").get();
+    for (const oldVersion of versions.docs.slice(8)) {
+      await db.recursiveDelete(oldVersion.ref);
+    }
+    return { backupId, snapshotId };
   }
 );
