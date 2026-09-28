@@ -1,6 +1,7 @@
 // src/components/LoginModal.tsx
 import { useState, useEffect } from "react";
 import { auth } from "../firebase";
+import { FirebaseError } from "firebase/app";
 import {
   GoogleAuthProvider,
   OAuthProvider,
@@ -114,7 +115,7 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
       setConfirmPwd("");
       setMode("login");
       setInfo("Brugeren er oprettet. Bekræft din e-mail via linket, vi har sendt, og log derefter ind.");
-    } catch (e: any) {
+    } catch (e: unknown) {
       const messages: Record<string, string> = {
         "auth/email-already-in-use": "E-mailen er allerede i brug. Log ind eller brug Glemt adgangskode.",
         "auth/invalid-email": "Skriv en gyldig e-mailadresse.",
@@ -124,7 +125,7 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
         "auth/network-request-failed": "Kontrollér din internetforbindelse og prøv igen.",
         "auth/too-many-requests": "Der er for mange forsøg. Vent lidt og prøv igen.",
       };
-      setErr(messages[e.code] || "Brugeren kunne ikke oprettes. Prøv igen.");
+      setErr(messages[e instanceof FirebaseError ? e.code : ""] || "Brugeren kunne ikke oprettes. Prøv igen.");
     } finally {
       setBusy(false);
     }
