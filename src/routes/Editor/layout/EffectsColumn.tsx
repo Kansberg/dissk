@@ -19,9 +19,6 @@ export default function EffectsColumn({ doc, patch, theme }: Props) {
   const { addToHistory } = useUndo();
   const { RADIUS } = theme;
 
-  const contextRef = useRef<HTMLElement | null>(null);
-  const shortRef = useRef<HTMLElement | null>(null);
-  const longRef = useRef<HTMLElement | null>(null);
 
   const seqRef = useRef(0);
 
@@ -88,78 +85,6 @@ export default function EffectsColumn({ doc, patch, theme }: Props) {
     boxSizing: "border-box",
   });
 
-  // -------- Lokale states + refs for kun-blur/10min commit --------
-  const [contextHtml, setContextHtml] = useState<string>(doc.context || "");
-  const latestContextRef = useRef<string>(doc.context || "");
-  const contextTimerRef = useRef<number | ReturnType<typeof setTimeout> | null>(null);
-
-  const [shortHtml, setShortHtml] = useState<string>(doc.effects?.short || "");
-  const [longHtml, setLongHtml] = useState<string>(doc.effects?.long || "");
-  const latestShortRef = useRef<string>(doc.effects?.short || "");
-  const latestLongRef = useRef<string>(doc.effects?.long || "");
-  const effectsTimerRef = useRef<number | ReturnType<typeof setTimeout> | null>(null);
-
-  // Hold local state i sync, hvis doc ændres udefra (fx load/undo)
-  useEffect(() => {
-    if (doc.context !== latestContextRef.current) {
-      setContextHtml(doc.context || "");
-      latestContextRef.current = doc.context || "";
-    }
-  }, [doc.context]);
-
-  useEffect(() => {
-    const v = doc.effects?.short || "";
-    if (v !== latestShortRef.current) {
-      setShortHtml(v);
-      latestShortRef.current = v;
-    }
-  }, [doc.effects?.short]);
-
-  useEffect(() => {
-    const v = doc.effects?.long || "";
-    if (v !== latestLongRef.current) {
-      setLongHtml(v);
-      latestLongRef.current = v;
-    }
-  }, [doc.effects?.long]);
-
-  // --------- fælles helpers ---------
-  const scheduleEffectsAuto = () => {
-    if (effectsTimerRef.current) clearTimeout(effectsTimerRef.current as any);
-    effectsTimerRef.current = setTimeout(() => {
-      const nextEffects = {
-        ...(doc.effects || {}),
-        short: latestShortRef.current,
-        long: latestLongRef.current,
-      };
-      addToHistory({ ...doc, effects: nextEffects });
-      safePatch({ effects: nextEffects }, "effects:autoCommit:10min");
-    }, 10 * 60 * 1000);
-  };
-
-  const commitEffectsOnBlur = () => {
-    const nextEffects = {
-      ...(doc.effects || {}),
-      short: latestShortRef.current,
-      long: latestLongRef.current,
-    };
-    addToHistory({ ...doc, effects: nextEffects });
-    safePatch({ effects: nextEffects }, "effects:blur");
-  };
-
-  const scheduleContextAuto = () => {
-    if (contextTimerRef.current) clearTimeout(contextTimerRef.current as any);
-    contextTimerRef.current = setTimeout(() => {
-      addToHistory({ ...doc, context: latestContextRef.current });
-      safePatch({ context: latestContextRef.current }, "context:autoCommit:10min");
-    }, 10 * 60 * 1000);
-  };
-
-  const commitContextOnBlur = () => {
-    addToHistory({ ...doc, context: latestContextRef.current });
-    safePatch({ context: latestContextRef.current }, "context:blur");
-  };
-
   return (
     <>
       {/* ---------- KONTEKST (STYRES AF doc.showContext) ---------- */}
@@ -187,24 +112,13 @@ export default function EffectsColumn({ doc, patch, theme }: Props) {
             <CustomQuill
               key="effects-context"
               fieldType="context"
-              value={contextHtml}
+              value={doc.context || ""}
               onChange={(html: string) => {
-                setContextHtml(html);
-                latestContextRef.current = html;
-                addToHistory({ ...doc, context: html });
-                scheduleContextAuto();
+                if ((doc.context || "") === html) return;
+                addToHistory(doc);
+                patch({ context: html });
               }}
-              onRefReady={(el) => {
-                contextRef.current = el as HTMLElement | null;
-                if (el && !(el as any).__contextBlurBound) {
-                  (el as any).__contextBlurBound = true;
-                  el.addEventListener(
-                    "focusout",
-                    () => requestAnimationFrame(() => commitContextOnBlur()),
-                    true
-                  );
-                }
-              }}
+
               onBoxColorChange={(color: string) => {
                 const currentColor = doc.styles?.context?.bg || "#f8fafc";
                 if (color === currentColor) return;
@@ -236,30 +150,12 @@ export default function EffectsColumn({ doc, patch, theme }: Props) {
         <CustomQuill
           key="effects-short"
           fieldType="effectsShort"
-          onRefReady={(el) => {
-            shortRef.current = el as HTMLElement | null;
-            if (el && !(el as any).__shortBlurBound) {
-              (el as any).__shortBlurBound = true;
-              el.addEventListener(
-                "focusout",
-                () => requestAnimationFrame(() => commitEffectsOnBlur()),
-                true
-              );
-            }
-          }}
-          value={shortHtml}
+
+          value={doc.effects?.short || ""}
           onChange={(html: string) => {
-            setShortHtml(html);
-            latestShortRef.current = html;
-            addToHistory({
-              ...doc,
-              effects: {
-                ...(doc.effects || {}),
-                short: html,
-                long: latestLongRef.current,
-              },
-            });
-            scheduleEffectsAuto();
+            if ((doc.effects?.short || "") === html) return;
+            addToHistory(doc);
+            safePatch({ effects: { ...doc.effects, short: html } }, "short:change");
           }}
           onBoxColorChange={(color: string) => {
             const currentColor = doc.styles?.effectsShort?.bg || "#ffffff";
@@ -287,30 +183,12 @@ export default function EffectsColumn({ doc, patch, theme }: Props) {
         <CustomQuill
           key="effects-long"
           fieldType="effectsLong"
-          onRefReady={(el) => {
-            longRef.current = el as HTMLElement | null;
-            if (el && !(el as any).__longBlurBound) {
-              (el as any).__longBlurBound = true;
-              el.addEventListener(
-                "focusout",
-                () => requestAnimationFrame(() => commitEffectsOnBlur()),
-                true
-              );
-            }
-          }}
-          value={longHtml}
+
+          value={doc.effects?.long || ""}
           onChange={(html: string) => {
-            setLongHtml(html);
-            latestLongRef.current = html;
-            addToHistory({
-              ...doc,
-              effects: {
-                ...(doc.effects || {}),
-                short: latestShortRef.current,
-                long: html,
-              },
-            });
-            scheduleEffectsAuto();
+            if ((doc.effects?.long || "") === html) return;
+            addToHistory(doc);
+            safePatch({ effects: { ...doc.effects, long: html } }, "long:change");
           }}
           onBoxColorChange={(color: string) => {
             const currentColor = doc.styles?.effectsLong?.bg || "#ffffff";

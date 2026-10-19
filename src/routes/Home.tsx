@@ -24,6 +24,7 @@ import ConfirmCopyModal from "../components/ConfirmCopyModal";
 import CreateModal from "../components/CreateModal";
 import { canUseMiniDissk } from "../utils/miniDisskAccess";
 import { createEmptyMiniDissk } from "../types/miniDissk";
+import { migrateLegacyProject } from "../utils/projectMigration";
 
 type RemoteDoc = {
   id: string;
@@ -87,16 +88,7 @@ export default function Home() {
       for (const legacyProject of legacyOwnSnapshot.docs) {
         const legacyData = legacyProject.data() as any;
         if (legacyData.access && !legacyData.owner) continue;
-        const globalRef = doc(db, "projects", legacyProject.id);
-        const globalSnapshot = await getDoc(globalRef);
-        const globalData = globalSnapshot.data() || {};
-        await setDoc(globalRef, {
-          ...legacyData,
-          owner: globalData.owner || user.email?.toLowerCase() || "",
-          ownerUid: globalData.ownerUid || user.uid,
-          sharedWith: globalData.sharedWith || legacyData.sharedWith || {},
-        }, { merge: true });
-        await deleteDoc(legacyProject.ref);
+        await migrateLegacyProject(user.uid, user.email || "", legacyProject.id);
       }
 
       const ownSnap = await getDocs(

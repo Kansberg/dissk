@@ -60,6 +60,8 @@ export default function CustomQuill({
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const quillRef = useRef<Quill | null>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   // Sidste værdi vi har skubbet ud via onChange – pr. instans
   const lastValueRef = useRef<string>(value || "");
@@ -109,7 +111,7 @@ export default function CustomQuill({
       if (source !== "user") return;
       const html = q.root.innerHTML;
       lastValueRef.current = html;
-      onChange(html);
+      onChangeRef.current(html);
       // Debug pr. felt
       console.log("TEXT CHANGE", { fieldType, html });
     });
@@ -281,6 +283,7 @@ export default function CustomQuill({
   return (
     <div
       ref={wrapperRef}
+      data-fieldtype={fieldType}
       style={wrapperStyle}
       onClick={() => {
         setActive(true);

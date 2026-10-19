@@ -251,6 +251,11 @@ service cloud.firestore {
     }
 
     match /projects/{projectId} {
+      // Permit the owner to check a missing destination during legacy migration.
+      allow get: if currentUserIsActive()
+        && !exists(/databases/$(database)/documents/projects/$(projectId))
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid)/projects/$(projectId));
+
       allow create: if isActiveUser()
         && request.resource.data.owner == userEmail()
         && request.resource.data.ownerUid == request.auth.uid;

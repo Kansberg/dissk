@@ -21,6 +21,7 @@ type Props = {
   onToggleView?: () => void;    // beholdt for compat (ikke brugt)
   onSettingsClick?: () => void; // beholdt for compat (ikke brugt)
   onDownloadRequested?: (options: DownloadOptions) => Promise<void> | void;
+  saveStatus?: React.ReactNode;
 };
 
 const BRAND = "#03424f";
@@ -33,6 +34,7 @@ export default function Topbar({
   patch,
   onShareClick,
   onDownloadRequested,
+  saveStatus,
 }: Props) {
   const { user, logout } = useAuth();
   const { undo, canUndo } = useUndo();
@@ -581,6 +583,7 @@ const ToggleRow = ({
 
         {/* RIGHT SIDE */}
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {saveStatus}
           {/* EDITOR MODE */}
           {mode === "editor" && (
             <>

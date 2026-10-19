@@ -80,10 +80,6 @@ const setStepSymbol = (stepId: string, sym: StepSymbol | null) => {
 
 
 // OUTPUT: direkte refs til contentEditable-bokse
-const outputTimeRef   = useRef<HTMLDivElement | null>(null);
-const outputAssumpRef = useRef<HTMLDivElement | null>(null);
-const outputMidRef    = useRef<HTMLDivElement | null>(null);
-const outputSignRef   = useRef<HTMLDivElement | null>(null);
 
 // ✅ Lokalt “hukommelse” for baggrundsfarve pr. kolonne (Tid & ansvar)
 const timeBgRef = useRef<Record<string, string>>({});
@@ -327,45 +323,6 @@ const handleDeleteCell = (
   setActiveCell(null);
 };
 
-// Hold output-felter i sync ved load / reload – men rør ikke caret
-useEffect(() => {
-  if (outputTimeRef.current) {
-    const html = doc.outputTime || "";
-    if (outputTimeRef.current.innerHTML !== html) {
-      outputTimeRef.current.innerHTML = html;
-    }
-  }
-}, [doc.outputTime]);
-
-useEffect(() => {
-  if (outputAssumpRef.current) {
-    const html = doc.outputAssumption || "";
-    if (outputAssumpRef.current.innerHTML !== html) {
-      outputAssumpRef.current.innerHTML = html;
-    }
-  }
-}, [doc.outputAssumption]);
-
-useEffect(() => {
-  if (outputMidRef.current) {
-    const html = doc.output || "";
-    if (outputMidRef.current.innerHTML !== html) {
-      outputMidRef.current.innerHTML = html;
-    }
-  }
-}, [doc.output]);
-
-useEffect(() => {
-  if (outputSignRef.current) {
-    const html = doc.outputSign || "";
-    if (outputSignRef.current.innerHTML !== html) {
-      outputSignRef.current.innerHTML = html;
-    }
-  }
-}, [doc.outputSign]);
-
-
-
   const handleDragStart = (id: string, e?: React.DragEvent) => {
     setDraggingCol(id);
     if (e?.dataTransfer) {
@@ -593,7 +550,7 @@ const col = gridStartCol + i + symbolOffsetBefore;
 />
 
 
-            
+
        {/* Tid & ansvar */}
 {!isHidden(s, "time") && (
   <>
@@ -620,50 +577,12 @@ const col = gridStartCol + i + symbolOffsetBefore;
     <CustomQuill
       key={`time-${s.id}`}
       fieldType="time"
-      onRefReady={(el) => {
-        timeRefById.current[s.id] = el as HTMLElement | null;
-
-        // Bind præcis én blur-listener pr. editor (commit kun ved blur)
-        if (el && !(el as any).__timeBlurBound) {
-          (el as any).__timeBlurBound = true;
-          el.addEventListener(
-            "focusout",
-            () => {
-              // Læs nyeste HTML direkte fra DOM, så vi ikke overskriver med tomt
-              const root = timeRefById.current[s.id] as HTMLElement | null;
-              const html =
-                root?.querySelector(".ql-editor")?.innerHTML ?? "";
-              // vent 1 frame så evt. lokale updates er færdige
-              requestAnimationFrame(() => {
-                addToHistory({ ...doc, steps: (doc.steps || []).map(st => st.id === s.id ? { ...st, time: html } : st) });
-                patchStepField(s.id, "time", html);
-              });
-            },
-            true
-          );
-        }
-      }}
+      onRefReady={(el) => { timeRefById.current[s.id] = el; }}
       value={s.time || ""}
       onChange={(html: string) => {
-        // Opdater kun lokalt (historik), ingen patch her
-        const next = { ...doc };
-        const stepIndex = next.steps.findIndex((st) => st.id === s.id);
-        if (stepIndex === -1) return;
-
-        if ((next.steps[stepIndex].time || "") === html) return;
-
-        next.steps[stepIndex].time = html;
-        addToHistory(next); // snapshot FØR ændring
-
-        // Planlæg auto-commit efter 10 min inaktivitet (læser altid seneste DOM)
-        clearTimeout((window as any)[`commitTimeout_${s.id}_time`]);
-        (window as any)[`commitTimeout_${s.id}_time`] = setTimeout(() => {
-          const root = timeRefById.current[s.id] as HTMLElement | null;
-          const latestHtml =
-            root?.querySelector(".ql-editor")?.innerHTML ?? "";
-          addToHistory({ ...doc, steps: (doc.steps || []).map(st => st.id === s.id ? { ...st, time: latestHtml } : st) });
-          patchStepField(s.id, "time", latestHtml);
-        }, 10 * 60 * 1000);
+        if ((s.time || "") === html) return;
+        addToHistory(doc);
+        patchStepField(s.id, "time", html);
       }}
       onFocus={() => setActiveCell({ colId: s.id, type: "time" })}
       onBoxColorChange={(color: string) => {
@@ -732,60 +651,12 @@ const col = gridStartCol + i + symbolOffsetBefore;
     <CustomQuill
       key={`assump-${s.id}`}
       fieldType="assump"
-      onRefReady={(el) => {
-        assumpRefById.current[s.id] = el as HTMLElement | null;
-
-        // Bind præcis én blur-listener pr. editor (commit kun ved blur)
-        if (el && !(el as any).__assumpBlurBound) {
-          (el as any).__assumpBlurBound = true;
-          el.addEventListener(
-            "focusout",
-            () => {
-              // Læs nyeste HTML direkte fra DOM, så vi ikke overskriver med tomt
-              const root = assumpRefById.current[s.id] as HTMLElement | null;
-              const html =
-                root?.querySelector(".ql-editor")?.innerHTML ?? "";
-              // vent 1 frame så evt. lokale updates er færdige
-              requestAnimationFrame(() => {
-                addToHistory({
-                  ...doc,
-                  steps: (doc.steps || []).map((st) =>
-                    st.id === s.id ? { ...st, assumption: html } : st
-                  ),
-                });
-                patchStepField(s.id, "assumption", html);
-              });
-            },
-            true
-          );
-        }
-      }}
+      onRefReady={(el) => { assumpRefById.current[s.id] = el; }}
       value={s.assumption || ""}
       onChange={(html: string) => {
-        // Opdater kun lokalt (historik), ingen patch her
-        const next = { ...doc };
-        const stepIndex = next.steps.findIndex((st) => st.id === s.id);
-        if (stepIndex === -1) return;
-
-        if ((next.steps[stepIndex].assumption || "") === html) return;
-
-        next.steps[stepIndex].assumption = html;
-        addToHistory(next);
-
-        // Planlæg auto-commit efter 10 min inaktivitet (læser altid seneste DOM)
-        clearTimeout((window as any)[`commitTimeout_${s.id}_assump`]);
-        (window as any)[`commitTimeout_${s.id}_assump`] = setTimeout(() => {
-          const root = assumpRefById.current[s.id] as HTMLElement | null;
-          const latestHtml =
-            root?.querySelector(".ql-editor")?.innerHTML ?? "";
-          addToHistory({
-            ...doc,
-            steps: (doc.steps || []).map((st) =>
-              st.id === s.id ? { ...st, assumption: latestHtml } : st
-            ),
-          });
-          patchStepField(s.id, "assumption", latestHtml);
-        }, 10 * 60 * 1000);
+        if ((s.assumption || "") === html) return;
+        addToHistory(doc);
+        patchStepField(s.id, "assumption", html);
       }}
       onFocus={() => setActiveCell({ colId: s.id, type: "assump" })}
       onBoxColorChange={(color: string) => {
@@ -835,58 +706,12 @@ const col = gridStartCol + i + symbolOffsetBefore;
 <CustomQuill
   key={`mid-${s.id}`}
   fieldType="mid"
-  onRefReady={(el) => {
-    midRefById.current[s.id] = el as HTMLElement | null;
-
-    // Bind præcis én blur-listener pr. editor (commit kun ved blur)
-    if (el && !(el as any).__midBlurBound) {
-      (el as any).__midBlurBound = true;
-      el.addEventListener(
-        "focusout",
-        () => {
-          // Læs nyeste HTML direkte fra DOM, så vi ikke overskriver med tomt
-          const root = midRefById.current[s.id] as HTMLElement | null;
-          const html = root?.querySelector(".ql-editor")?.innerHTML ?? "";
-          // vent 1 frame så evt. lokale updates er færdige
-          requestAnimationFrame(() => {
-            addToHistory({
-              ...doc,
-              steps: (doc.steps || []).map((st) =>
-                st.id === s.id ? { ...st, title: html } : st
-              ),
-            });
-            patchStepField(s.id, "title", html);
-          });
-        },
-        true
-      );
-    }
-  }}
+  onRefReady={(el) => { midRefById.current[s.id] = el; }}
   value={s.title || ""}
   onChange={(html: string) => {
-    // Opdater kun lokalt (historik), ingen patch her
-    const next = { ...doc };
-    const stepIndex = next.steps.findIndex((st) => st.id === s.id);
-    if (stepIndex === -1) return;
-
-    if ((next.steps[stepIndex].title || "") === html) return;
-
-    next.steps[stepIndex].title = html;
-    addToHistory(next);
-
-    // Planlæg auto-commit efter 10 min inaktivitet (læser altid seneste DOM)
-    clearTimeout((window as any)[`commitTimeout_${s.id}_mid`]);
-    (window as any)[`commitTimeout_${s.id}_mid`] = setTimeout(() => {
-      const root = midRefById.current[s.id] as HTMLElement | null;
-      const latestHtml = root?.querySelector(".ql-editor")?.innerHTML ?? "";
-      addToHistory({
-        ...doc,
-        steps: (doc.steps || []).map((st) =>
-          st.id === s.id ? { ...st, title: latestHtml } : st
-        ),
-      });
-      patchStepField(s.id, "title", latestHtml);
-    }, 10 * 60 * 1000);
+    if ((s.title || "") === html) return;
+    addToHistory(doc);
+    patchStepField(s.id, "title", html);
   }}
   onFocus={() => setActiveCell({ colId: s.id, type: "mid" })}
 
@@ -999,58 +824,12 @@ const col = gridStartCol + i + symbolOffsetBefore;
     <CustomQuill
       key={`sign-${s.id}`}
       fieldType="sign"
-      onRefReady={(el) => {
-        signRefById.current[s.id] = el as HTMLElement | null;
-
-        // Bind præcis én blur-listener pr. editor (commit kun ved blur)
-        if (el && !(el as any).__signBlurBound) {
-          (el as any).__signBlurBound = true;
-          el.addEventListener(
-            "focusout",
-            () => {
-              // Læs nyeste HTML direkte fra DOM, så vi ikke overskriver med tomt
-              const root = signRefById.current[s.id] as HTMLElement | null;
-              const html = root?.querySelector(".ql-editor")?.innerHTML ?? "";
-              // vent 1 frame så evt. lokale updates er færdige
-              requestAnimationFrame(() => {
-                addToHistory({
-                  ...doc,
-                  steps: (doc.steps || []).map((st) =>
-                    st.id === s.id ? { ...st, sign: html } : st
-                  ),
-                });
-                patchStepField(s.id, "sign", html);
-              });
-            },
-            true
-          );
-        }
-      }}
+      onRefReady={(el) => { signRefById.current[s.id] = el; }}
       value={s.sign || ""}
       onChange={(html: string) => {
-        // Opdater kun lokalt (historik), ingen patch her
-        const next = { ...doc };
-        const stepIndex = next.steps.findIndex((st) => st.id === s.id);
-        if (stepIndex === -1) return;
-
-        if ((next.steps[stepIndex].sign || "") === html) return;
-
-        next.steps[stepIndex].sign = html;
-        addToHistory(next);
-
-        // Planlæg auto-commit efter 10 min inaktivitet (læser altid seneste DOM)
-        clearTimeout((window as any)[`commitTimeout_${s.id}_sign`]);
-        (window as any)[`commitTimeout_${s.id}_sign`] = setTimeout(() => {
-          const root = signRefById.current[s.id] as HTMLElement | null;
-          const latestHtml = root?.querySelector(".ql-editor")?.innerHTML ?? "";
-          addToHistory({
-            ...doc,
-            steps: (doc.steps || []).map((st) =>
-              st.id === s.id ? { ...st, sign: latestHtml } : st
-            ),
-          });
-          patchStepField(s.id, "sign", latestHtml);
-        }, 10 * 60 * 1000);
+        if ((s.sign || "") === html) return;
+        addToHistory(doc);
+        patchStepField(s.id, "sign", html);
       }}
       onFocus={() => setActiveCell({ colId: s.id, type: "sign" })}
 
@@ -1167,35 +946,15 @@ const col = gridStartCol + i + symbolOffsetBefore;
         fieldType={`outputTime-${outputCol}`}
         value={doc.outputTime || ""}
         onFocus={() => setActiveCell({ colId: "output", type: "time" })}
-        onRefReady={(el) => {
-          if (el && !(el as any).__outputTimeBlurBound) {
-            (el as any).__outputTimeBlurBound = true;
-            el.addEventListener(
-              "focusout",
-              () => {
-                const latest =
-                  (window as any).latest_output_time ?? doc.outputTime ?? "";
-                requestAnimationFrame(() => {
-                  addToHistory({ ...doc, outputTime: latest });
-                  patch({ outputTime: latest });
-                });
-              },
-              true
-            );
-          }
-        }}
-        onChange={(html) => {
-          // kun lokal opdatering + planlagt gem
-          (window as any).latest_output_time = html;
-          addToHistory({ ...doc, outputTime: html });
 
-          clearTimeout((window as any).commitTimeout_output_time);
-          (window as any).commitTimeout_output_time = setTimeout(() => {
-            const latest =
-              (window as any).latest_output_time ?? doc.outputTime ?? "";
-            addToHistory({ ...doc, outputTime: latest });
-            patch({ outputTime: latest });
-          }, 10 * 60 * 1000);
+        onChange={(html: string) => {
+
+          if ((doc.outputTime || "") === html) return;
+
+          addToHistory(doc);
+
+          patch({ outputTime: html });
+
         }}
         onBoxColorChange={(color) => {
           const current = doc.styles?.outputTime?.bg || "#e5eff5";
@@ -1241,38 +1000,15 @@ const col = gridStartCol + i + symbolOffsetBefore;
         fieldType={`outputAssump-${outputCol}`}
         value={doc.outputAssumption || ""}
         onFocus={() => setActiveCell({ colId: "output", type: "assump" })}
-        onRefReady={(el) => {
-          if (el && !(el as any).__outputAssumpBlurBound) {
-            (el as any).__outputAssumpBlurBound = true;
-            el.addEventListener(
-              "focusout",
-              () => {
-                const latest =
-                  (window as any).latest_output_assump ??
-                  doc.outputAssumption ??
-                  "";
-                requestAnimationFrame(() => {
-                  addToHistory({ ...doc, outputAssumption: latest });
-                  patch({ outputAssumption: latest });
-                });
-              },
-              true
-            );
-          }
-        }}
-        onChange={(html) => {
-          (window as any).latest_output_assump = html;
-          addToHistory({ ...doc, outputAssumption: html });
 
-          clearTimeout((window as any).commitTimeout_output_assump);
-          (window as any).commitTimeout_output_assump = setTimeout(() => {
-            const latest =
-              (window as any).latest_output_assump ??
-              doc.outputAssumption ??
-              "";
-            addToHistory({ ...doc, outputAssumption: latest });
-            patch({ outputAssumption: latest });
-          }, 10 * 60 * 1000);
+        onChange={(html: string) => {
+
+          if ((doc.outputAssumption || "") === html) return;
+
+          addToHistory(doc);
+
+          patch({ outputAssumption: html });
+
         }}
         onBoxColorChange={(color) => {
           const current = doc.styles?.outputAssump?.bg || "#f8fafc";
@@ -1309,34 +1045,15 @@ const col = gridStartCol + i + symbolOffsetBefore;
     fieldType={`outputMid-${outputCol}`}
     value={doc.output || ""}
     onFocus={() => setActiveCell({ colId: "output", type: "mid" })}
-    onRefReady={(el) => {
-      if (el && !(el as any).__outputMidBlurBound) {
-        (el as any).__outputMidBlurBound = true;
-        el.addEventListener(
-          "focusout",
-          () => {
-            const latest =
-              (window as any).latest_output_mid ?? doc.output ?? "";
-            requestAnimationFrame(() => {
-              addToHistory({ ...doc, output: latest });
-              patch({ output: latest });
-            });
-          },
-          true
-        );
-      }
-    }}
-    onChange={(html) => {
-      (window as any).latest_output_mid = html;
-      addToHistory({ ...doc, output: html });
 
-      clearTimeout((window as any).commitTimeout_output_mid);
-      (window as any).commitTimeout_output_mid = setTimeout(() => {
-        const latest =
-          (window as any).latest_output_mid ?? doc.output ?? "";
-        addToHistory({ ...doc, output: latest });
-        patch({ output: latest });
-      }, 10 * 60 * 1000);
+    onChange={(html: string) => {
+
+      if ((doc.output || "") === html) return;
+
+      addToHistory(doc);
+
+      patch({ output: html });
+
     }}
     onBoxColorChange={(color) => {
       const current = doc.styles?.outputMid?.bg || "#e0f2fe";
@@ -1379,34 +1096,15 @@ const col = gridStartCol + i + symbolOffsetBefore;
         fieldType={`outputSign-${outputCol}`}
         value={doc.outputSign || ""}
         onFocus={() => setActiveCell({ colId: "output", type: "sign" })}
-        onRefReady={(el) => {
-          if (el && !(el as any).__outputSignBlurBound) {
-            (el as any).__outputSignBlurBound = true;
-            el.addEventListener(
-              "focusout",
-              () => {
-                const latest =
-                  (window as any).latest_output_sign ?? doc.outputSign ?? "";
-                requestAnimationFrame(() => {
-                  addToHistory({ ...doc, outputSign: latest });
-                  patch({ outputSign: latest });
-                });
-              },
-              true
-            );
-          }
-        }}
-        onChange={(html) => {
-          (window as any).latest_output_sign = html;
-          addToHistory({ ...doc, outputSign: html });
 
-          clearTimeout((window as any).commitTimeout_output_sign);
-          (window as any).commitTimeout_output_sign = setTimeout(() => {
-            const latest =
-              (window as any).latest_output_sign ?? doc.outputSign ?? "";
-            addToHistory({ ...doc, outputSign: latest });
-            patch({ outputSign: latest });
-          }, 10 * 60 * 1000);
+        onChange={(html: string) => {
+
+          if ((doc.outputSign || "") === html) return;
+
+          addToHistory(doc);
+
+          patch({ outputSign: html });
+
         }}
         onBoxColorChange={(color) => {
           const current = doc.styles?.outputSign?.bg || "#f8fafc";

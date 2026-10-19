@@ -21,20 +21,6 @@ export default function InputColumn({ doc, patch, theme }: Props) {
   const mountTime = useRef(Date.now());
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // --- LOKAL STATE FOR INPUT ---
-  const [inputHtml, setInputHtml] = useState<string>(doc.input || "");
-  const latestInputRef = useRef<string>(doc.input || "");
-  const autoCommitTimerRef = useRef<number | ReturnType<typeof setTimeout> | null>(null);
-
-  // Hold input i sync, hvis doc.input ændres udefra (fx ved load/undo)
-  useEffect(() => {
-    if (doc.input !== latestInputRef.current) {
-      setInputHtml(doc.input || "");
-      latestInputRef.current = doc.input || "";
-    }
-  }, [doc.input]);
-
-  // 🔹 Læs farven direkte fra doc (eller default)
   const docBoxColor: string = useMemo(() => {
     const col = (((doc as any)?.styles || {})?.input || {})?.bg ?? C.brand;
     console.log("[InputColumn:docBoxColor:compute]", { col });
@@ -121,66 +107,18 @@ export default function InputColumn({ doc, patch, theme }: Props) {
     docBoxColor,
   });
 
-  // --- Commit helpers (blur / 10min) ---
-  const scheduleAutoCommit = () => {
-    if (autoCommitTimerRef.current) clearTimeout(autoCommitTimerRef.current as any);
-    autoCommitTimerRef.current = setTimeout(() => {
-      // snapshot før commit – som du gør andre steder
-      addToHistory({ ...doc, input: latestInputRef.current });
-      safePatch({ input: latestInputRef.current }, "input:autoCommit:10min");
-    }, 10 * 60 * 1000);
-  };
-
-  const commitOnBlur = () => {
-    // snapshot før commit
-    addToHistory({ ...doc, input: latestInputRef.current });
-    safePatch({ input: latestInputRef.current }, "input:blur");
-  };
-
   return (
     <div style={{ width: "100%" }} ref={containerRef}>
       <div style={labelStyle}>Input</div>
 
       <CustomQuill
-        value={inputHtml}
-        onChange={(html) => {
-          const seq = ++seqRef.current;
-          const from = latestInputRef.current;
-          const same = from === html;
-
-          console.log("[InputColumn:onChange]", {
-            seq,
-            time: new Date().toISOString(),
-            htmlLen: (html || "").length,
-            htmlPreview: preview(html || ""),
-            sameAsLastPatched: same,
-          });
-
-          // Opdater KUN lokalt — ingen patch her
-          setInputHtml(html);
-          latestInputRef.current = html;
-
-          // Behold din historik-adfærd (snapshot af den nye tilstand)
-          addToHistory({ ...doc, input: html });
-
-          // Autogrow og planlæg 10-min commit
-          autoGrow();
-          scheduleAutoCommit();
+        value={doc.input || ""}
+        onChange={(html: string) => {
+          if ((doc.input || "") === html) return;
+          addToHistory(doc);
+          patch({ input: html });
         }}
-        onRefReady={(el) => {
-          // Bind blur (focusout) direkte på editor-root, så vi committer på blur
-          if (el && !(el as any).__inputBlurBound) {
-            (el as any).__inputBlurBound = true;
-            el.addEventListener(
-              "focusout",
-              () => {
-                // vent en frame så evt. DOM/Quill kan færdiggøre updates
-                requestAnimationFrame(() => commitOnBlur());
-              },
-              true
-            );
-          }
-        }}
+
         boxColor={boxColor}
         onBoxColorChange={(color) => {
           const seq = ++seqRef.current;

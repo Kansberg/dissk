@@ -1,11 +1,11 @@
 // src/routes/Editor/EditorShell.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Topbar from "../../components/Topbar";
 import { useAuth } from "../../context/AuthContext";
 import { createOwnedProject, saveSharedProject } from "../../utils/save";
 import { db } from "../../firebase";
-import { deleteDoc, doc as fsDoc, getDoc } from "firebase/firestore";
+import { doc as fsDoc, getDocFromServer } from "firebase/firestore";
 import CanvasPanel from "./CanvasPanel";
 import type { Doc } from "../../types/editor";
 import ShareModal from "../../components/ShareModal";
@@ -13,6 +13,7 @@ import type { DownloadOptions } from "../../components/DownloadModal";
 import { exportDissk } from "../../utils/exportDissk";
 import { EDITOR_THEME } from "./editorTheme";
 import { queueRecoveryBackup } from "../../utils/recoveryBackup";
+import { migrateLegacyProject } from "../../utils/projectMigration";
 
 function deepMerge<T extends Record<string, any>>(base: T = {} as T, incoming: Partial<T> = {}): T {
   const out: any = Array.isArray(base) ? [...base] : { ...base };
@@ -138,6 +139,12 @@ export default function EditorShell() {
   const [zoomMode, setZoomMode] = useState<"auto" | "manual">("auto");
   const [showShare, setShowShare] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
+  const [saveAttempt, setSaveAttempt] = useState(0);
+  const [online, setOnline] = useState(navigator.onLine);
+  const loadedDocRef = useRef<Doc | null>(null);
+  const pendingSaveRef = useRef(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null!);
@@ -145,9 +152,44 @@ export default function EditorShell() {
   const migratedRef = useRef(false);
 
   useEffect(() => {
-    if (!doc || projectAccess === "read") return;
+    if (!doc || projectAccess === "read" || doc === loadedDocRef.current) return;
     queueRecoveryBackup(doc, !user && id === "new" ? "anonymous" : "editor");
-  }, [doc, id, projectAccess, user]);
+    if (!user) {
+      writeSessionDoc(doc);
+      return;
+    }
+    if (doc.id !== id) return;
+    let active = true;
+    pendingSaveRef.current = true;
+    setSaveState("saving");
+    void saveSharedProject(doc.id, doc).then(() => {
+      if (!active) return;
+      pendingSaveRef.current = false;
+      setSaveState("saved");
+    }).catch((error) => {
+      if (!active) return;
+      console.error("[EditorShell:save]", error);
+      setSaveState("error");
+    });
+    return () => { active = false; };
+  }, [doc, id, projectAccess, user, saveAttempt]);
+
+  useEffect(() => {
+    const updateOnline = () => setOnline(navigator.onLine);
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      if (!pendingSaveRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("online", updateOnline);
+    window.addEventListener("offline", updateOnline);
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => {
+      window.removeEventListener("online", updateOnline);
+      window.removeEventListener("offline", updateOnline);
+      window.removeEventListener("beforeunload", warnBeforeLeaving);
+    };
+  }, []);
 
   const handleDownloadRequested = async (options: DownloadOptions) => {
     if (!panelRef.current) return;
@@ -180,11 +222,18 @@ export default function EditorShell() {
       return;
     }
 
-    // LOGGET IND → opret nyt projekt som før
+    // Login migration below owns the existing anonymous document.
+    if (readSessionDoc()) return;
+
     const nid = crypto.randomUUID();
     const fresh = newDoc(nid);
-    writeLocal(fresh);
-    navigate(`/editor/${nid}`, { replace: true });
+    let cancelled = false;
+    void createOwnedProject(user.uid, user.email || "", nid, fresh).then(() => {
+      if (!cancelled) navigate(`/editor/${nid}`, { replace: true });
+    }).catch(() => {
+      if (!cancelled) setLoadError("Din DISSK kunne ikke oprettes. Prøv igen med en aktiv internetforbindelse.");
+    });
+    return () => { cancelled = true; };
   }, [id, navigate, user]);
 
   const projectId = useMemo(() => (id && id !== "new" ? id : null), [id]);
@@ -203,21 +252,23 @@ export default function EditorShell() {
       return;
     }
 
+    let cancelled = false;
+    setDoc(null);
+    setLoadError(null);
+    pendingSaveRef.current = false;
     const load = async () => {
       try {
         console.log("[EditorShell:load] Tjekker Firestore for projekt:", projectId);
-        const ownRef = fsDoc(db, "users", user.uid, "projects", projectId);
+        await migrateLegacyProject(user.uid, user.email || "", projectId);
         const globalRef = fsDoc(db, "projects", projectId);
-        const [ownSnap, globalSnap] = await Promise.all([getDoc(ownRef), getDoc(globalRef)]);
+        const globalSnap = await getDocFromServer(globalRef);
+        if (cancelled) return;
         const email = String(user.email || "").toLowerCase();
         const globalData = globalSnap.exists() ? globalSnap.data() : null;
         const isOwner = globalData?.ownerUid === user.uid
-          || String(globalData?.owner || "").toLowerCase() === email
-          || (!globalData && ownSnap.exists());
+          || String(globalData?.owner || "").toLowerCase() === email;
         const sharedRole = globalData?.sharedWith?.[email];
-        const selectedData = isOwner && ownSnap.exists()
-          ? { ...globalData, ...ownSnap.data(), sharedWith: globalData?.sharedWith || {} }
-          : globalData;
+        const selectedData = globalData;
 
         setProjectAccess(isOwner ? "owner" : sharedRole);
 
@@ -227,6 +278,7 @@ export default function EditorShell() {
           const data = selectedData;
 
 const normalized: any = {
+  ...data,
   id: projectId,
   title: data.title ?? "Ny DISSK",
   input: data.input ?? "",
@@ -240,7 +292,10 @@ const normalized: any = {
   outputSign: data.outputSign ?? "",
   effects: data.effects ?? { short: "", long: "" },
   context: data.context ?? "",
-  updatedAt: Date.now(),
+  updatedAt: typeof data.updatedAt?.toMillis === "function"
+    ? data.updatedAt.toMillis() : Number(data.updatedAt || 0),
+  createdAt: typeof data.createdAt?.toMillis === "function"
+    ? data.createdAt.toMillis() : data.createdAt,
   styles: data.styles ?? {},
   showTidAnsvar: data.showTidAnsvar ?? true,
   showAntagelser: data.showAntagelser ?? true,
@@ -281,40 +336,28 @@ if (typeof raw === "object") {
 };
 
 
+          // Content writes must never replay stale ownership or sharing metadata.
+          delete normalized.owner;
+          delete normalized.ownerUid;
+          delete normalized.sharedWith;
+          if (normalized.createdAt === undefined) delete normalized.createdAt;
+          loadedDocRef.current = normalized;
+          setSaveState("saved");
           setDoc(normalized);
-          if (isOwner && ownSnap.exists()) {
-            const migration = globalSnap.exists()
-              ? saveSharedProject(projectId, {
-                  ...normalized,
-                  owner: globalData?.owner,
-                  ownerUid: globalData?.ownerUid || user.uid,
-                  sharedWith: globalData?.sharedWith || {},
-                })
-              : createOwnedProject(user.uid, email, projectId, normalized);
-            void migration
-              .then(() => deleteDoc(ownRef))
-              .catch((error) =>
-                console.error("[EditorShell:load] Kunne ikke migrere projektet", error)
-              );
-          }
-          requestAnimationFrame(() => autoFit());
-
           return;
         }
 
         console.warn("[EditorShell:load] Firestore-projekt ikke fundet — opretter ikke nyt automatisk");
+        setLoadError("Projektet findes ikke, eller du har ikke adgang til det.");
         return;
       } catch (e) {
         console.error("[EditorShell:load:firestore ERROR]", e);
+        if (!cancelled) setLoadError("Din DISSK kunne ikke indlæses. Kontrollér forbindelsen og prøv igen. Det gemte projekt er bevaret.");
       }
-
-      console.warn("[EditorShell:load] Local + Firestore mangler → laver ny");
-      const fresh = newDoc(projectId);
-      setDoc(fresh);
-      writeLocal(fresh);
     };
 
     load();
+    return () => { cancelled = true; };
   }, [projectId, user, id]);
 
   /** ---------- Migrer anonym DISSK til bruger ved login ---------- */
@@ -437,17 +480,6 @@ if (nextForNormalize.stepSymbols && typeof nextForNormalize.stepSymbols === "obj
 const cleaned = normalizeNumericKeys(nextForNormalize);
 
 
-      if (user?.uid) {
-        const save = saveSharedProject(cleaned.id, cleaned);
-        save
-          .then(() => console.log("✅ gemt"))
-          .catch((e) => console.error("❌ gem fejlede", e));
-      } else {
-        // ANONYM → kun sessionStorage
-        console.warn("⚠️ Ingen bruger logget ind – gemmer kun i session (midlertidig DISSK)");
-        writeSessionDoc(cleaned);
-      }
-
       return cleaned;
     });
   };
@@ -520,21 +552,13 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
         // nu normaliserer vi resten af dokumentet
         const cleaned = normalizeNumericKeys(nextForNormalize);
 
-    // persist som i patch()
-    if (user?.uid) {
-      const save = saveSharedProject(cleaned.id, cleaned);
-      save.catch((e) => console.error("❌ Direkte gem fejlede", e));
-    } else {
-      writeSessionDoc(cleaned);
-    }
-
     return cleaned; // ← funktionel setDoc med samlet doc
   });
 };
 
 
   /** ---------- Auto Fit (både zoom-ud og zoom-ind) ---------- */
-  const autoFit = () => {
+  const autoFit = useCallback(() => {
     if (!panelRef.current || !scrollRef.current) return;
 
     const panel = panelRef.current;
@@ -562,11 +586,17 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
       return z;
     });
 
-    setZoomMode("auto");
-  };
+  }, []);
+
+  const canvasId = doc?.id;
 
   useEffect(() => {
-    if (zoomMode !== "auto" || !panelRef.current || !scrollRef.current) return;
+    // Tilslut først efter dokumentets canvas er monteret. Manuel zoom skal
+    // hverken genberegnes ved gemning eller ændringer i dokumentets layout.
+    if (!canvasId || zoomMode !== "auto" || !panelRef.current || !scrollRef.current) return;
+
+    // Auto viser hele skemaet fra øverste venstre hjørne, også efter manuel rulning.
+    scrollRef.current.scrollTo({ left: 0, top: 0 });
 
     let raf = 0;
     const schedule = () => {
@@ -578,31 +608,26 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
     ro.observe(panelRef.current);
     ro.observe(scrollRef.current);
 
-    const mo = new MutationObserver(() => schedule());
-    mo.observe(panelRef.current, {
-      childList: true,
-      subtree: true,
-    });
-
     window.addEventListener("resize", schedule);
     schedule();
 
     return () => {
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
-      mo.disconnect();
       window.removeEventListener("resize", schedule);
     };
-  }, [zoomMode]);
-
-
-  useEffect(() => {
-    const t = setTimeout(() => autoFit(), 10);
-    return () => clearTimeout(t);
-  }, [doc]);
+  }, [autoFit, canvasId, zoomMode]);
 
   // VIGTIGT: nu må manglende user IKKE blokere editoren (anonym mode)
-  if (!doc) return null;
+  if (!doc || (id !== "new" && doc.id !== id)) return (
+    <div style={{ padding: 32, color: "#03424f" }}>
+      <p role={loadError ? "alert" : "status"}>
+        {loadError || (user ? "Indlæser DISSK…" : "Log på for at åbne din gemte DISSK.")}
+      </p>
+      <button onClick={() => window.location.reload()}>Prøv igen</button>{" "}
+      <button onClick={() => navigate("/")}>Til forsiden</button>
+    </div>
+  );
 
   /** ---------- UI ---------- */
   return (
@@ -633,6 +658,18 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
         }
         onSettingsClick={() => setShowSettings((v) => !v)}
         onDownloadRequested={user ? handleDownloadRequested : undefined}
+        saveStatus={user && projectAccess !== "read" ? (
+          <span role="status" aria-live="polite" data-save-state={saveState} style={{ fontSize: 13 }}>
+            {saveState === "error" ? "Kunne ikke gemme" : saveState === "saving"
+              ? (online ? "Gemmer…" : "Afventer forbindelse – ikke gemt på serveren")
+              : "Gemt på serveren"}
+            {saveState === "error" && (
+              <button onClick={() => setSaveAttempt((attempt) => attempt + 1)} style={{ marginLeft: 8 }}>
+                Prøv at gemme igen
+              </button>
+            )}
+          </span>
+        ) : undefined}
       />
 
       {/* Banner for anonyme brugere */}
@@ -814,7 +851,8 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
         <button
           onClick={() => {
             setZoomMode("auto");
-            requestAnimationFrame(() => autoFit());
+            autoFit();
+            scrollRef.current?.scrollTo({ left: 0, top: 0 });
           }}
           style={zoomBtn}
         >
