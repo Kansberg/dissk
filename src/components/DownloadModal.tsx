@@ -1,10 +1,12 @@
 import { useState } from "react";
 
 export type DownloadSize = "original" | "high" | "A4" | "A3" | "A2" | "A1" | "A0";
+export type DownloadBoxLayout = "dynamic" | "uniform";
 
 export type DownloadOptions = {
   size: DownloadSize;
   format: "png" | "pdf";
+  boxLayout?: DownloadBoxLayout;
 };
 
 type Props = {
@@ -26,6 +28,7 @@ const PAPER_SIZES: Array<{ value: DownloadSize; label: string }> = [
 export default function DownloadModal({ open, onConfirm, onCancel }: Props) {
   const [size, setSize] = useState<DownloadSize>("original");
   const [format, setFormat] = useState<"png" | "pdf">("png");
+  const [boxLayout, setBoxLayout] = useState<DownloadBoxLayout>("dynamic");
 
   if (!open) return null;
 
@@ -48,6 +51,8 @@ export default function DownloadModal({ open, onConfirm, onCancel }: Props) {
           borderRadius: 12,
           padding: 24,
           width: 360,
+          maxHeight: "calc(100vh - 40px)",
+          overflowY: "auto",
           boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
           fontFamily: "Inter, sans-serif",
           color: "#000000",
@@ -66,6 +71,7 @@ export default function DownloadModal({ open, onConfirm, onCancel }: Props) {
 
         {/* Size */}
         <label
+          htmlFor="download-size"
           style={{
             display: "block",
             marginBottom: 8,
@@ -77,6 +83,7 @@ export default function DownloadModal({ open, onConfirm, onCancel }: Props) {
           Størrelse
         </label>
         <select
+          id="download-size"
           value={size}
           onChange={(e) => setSize(e.target.value as DownloadSize)}
           style={{
@@ -103,6 +110,7 @@ export default function DownloadModal({ open, onConfirm, onCancel }: Props) {
 
         {/* Format */}
         <label
+          htmlFor="download-format"
           style={{
             display: "block",
             marginBottom: 8,
@@ -114,6 +122,7 @@ export default function DownloadModal({ open, onConfirm, onCancel }: Props) {
           Format
         </label>
         <select
+          id="download-format"
           value={format}
           onChange={(e) => setFormat(e.target.value as "png" | "pdf")}
           style={{
@@ -141,6 +150,23 @@ export default function DownloadModal({ open, onConfirm, onCancel }: Props) {
           </option>
         </select>
 
+        <label htmlFor="download-box-layout" style={{ display: "block", marginBottom: 8, fontWeight: 600, fontSize: 14 }}>
+          Kassehøjde
+        </label>
+        <select
+          id="download-box-layout"
+          value={boxLayout}
+          onChange={(event) => setBoxLayout(event.target.value as DownloadBoxLayout)}
+          style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc", background: "#fff", color: "#000" }}
+        >
+          <option value="dynamic">Dynamiske – højde efter indhold</option>
+          <option value="uniform">Ens højde pr. række</option>
+        </select>
+        <p style={{ fontSize: 12, lineHeight: 1.5, color: "#475569", margin: "8px 0 20px" }}>
+          Dynamiske kasser følger hver sin tekst. Ens højde giver alle kasser i samme række samme højde som den højeste kasse.
+          Valget gælder kun eksporten.
+        </p>
+
         {/* Actions */}
         <div
           style={{
@@ -165,7 +191,7 @@ export default function DownloadModal({ open, onConfirm, onCancel }: Props) {
           </button>
 
           <button
-            onClick={() => onConfirm({ size, format })}
+            onClick={() => onConfirm({ size, format, boxLayout })}
             style={{
               padding: "8px 14px",
               borderRadius: 8,

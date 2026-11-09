@@ -14,16 +14,13 @@ after(async () => { await browser?.close(); });
 
 async function readView(page) {
   return page.locator('.editor-scroll').evaluate(scroll => {
-    const wrapper = scroll.firstElementChild;
+    const wrapper = scroll.querySelector('[data-editor-zoom]');
     const panel = wrapper.firstElementChild;
     return {
       zoom: Number(wrapper.style.transform.match(/scale\(([^)]+)\)/)[1]),
       overflow: scroll.style.overflow,
       left: scroll.scrollLeft,
       top: scroll.scrollTop,
-      fit: Math.max(0.3, Math.min(1,
-        (scroll.clientWidth - 16) / panel.scrollWidth,
-        (scroll.clientHeight - 16) / panel.scrollHeight)),
     };
   });
 }
@@ -31,14 +28,18 @@ async function readView(page) {
 async function assertAutoFit(page) {
   await assert.doesNotReject(() => page.waitForFunction(() => {
     const scroll = document.querySelector('.editor-scroll');
-    const wrapper = scroll?.firstElementChild;
+    const wrapper = scroll?.querySelector('[data-editor-zoom]');
     const panel = wrapper?.firstElementChild;
     if (!panel) return false;
-    const zoom = Number(wrapper.style.transform.match(/scale\(([^)]+)\)/)?.[1]);
-    const fit = Math.max(0.3, Math.min(1,
-      (scroll.clientWidth - 16) / panel.scrollWidth,
-      (scroll.clientHeight - 16) / panel.scrollHeight));
-    return scroll.style.overflow === 'hidden' && Math.abs(zoom - fit) <= 0.02;
+    const bounds = panel.getBoundingClientRect();
+    const viewport = scroll.getBoundingClientRect();
+    const extent = scroll.querySelector('[data-canvas-extent]');
+    const zoom = Number(wrapper.style.transform.match(/scale\(([^)]+)\)/)[1]);
+    const fillsViewport = zoom >= 0.999 || Math.abs(scroll.clientWidth - extent.offsetWidth - 16) < 4
+      || Math.abs(scroll.clientHeight - extent.offsetHeight - 16) < 4;
+    return bounds.left >= viewport.left && bounds.top >= viewport.top
+      && bounds.right <= viewport.right + 1 && bounds.bottom <= viewport.bottom + 1
+      && scroll.scrollWidth <= scroll.clientWidth + 1 && scroll.scrollHeight <= scroll.clientHeight + 1 && fillsViewport;
   }));
 }
 
@@ -103,7 +104,8 @@ for (const steps of [3, 7]) for (const scale of [1, 1.25, 1.5]) {
 
       await page.locator('.editor-scroll').evaluate(scroll => scroll.scrollTo({ left: 100, top: 120 }));
       const scrolled = await readView(page);
-      assert(scrolled.left > 0 && scrolled.top > 0, 'manual mode allows scrolling in both directions');
+      assert.equal(scrolled.left, await page.locator('.editor-scroll').evaluate(el => Math.min(100, Math.max(0, el.scrollWidth - el.clientWidth))),
+        'manual scrolling reaches the requested position within the actual canvas');
       await page.setViewportSize({ width: viewport.width - 160, height: viewport.height - 80 });
       await page.waitForTimeout(150);
       const resized = await readView(page);
@@ -121,7 +123,7 @@ for (const steps of [3, 7]) for (const scale of [1, 1.25, 1.5]) {
 
       // A real layout change should still trigger Auto, without observing focus decorations.
       const beforeLayout = await readView(page);
-      await page.locator('.editor-scroll > div > div').evaluate(panel => { panel.style.width = `${panel.offsetWidth + 800}px`; });
+      await page.locator('[data-editor-zoom] > div').evaluate(panel => { panel.style.width = `${panel.offsetWidth + 800}px`; });
       await assertAutoFit(page);
       assert((await readView(page)).zoom < beforeLayout.zoom, 'Auto follows canvas size');
       assert.deepEqual(errors, []);

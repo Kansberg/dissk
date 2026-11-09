@@ -1,5 +1,6 @@
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
+import { applyExportBoxLayout } from "./exportLayout";
 import type {
   DownloadOptions,
   DownloadSize,
@@ -124,28 +125,42 @@ function prepareClone(source: HTMLElement): { wrapper: HTMLDivElement; clone: HT
 }
 
 async function renderHighResolution(
+  wrapper: HTMLDivElement,
   clone: HTMLElement,
   sourceWidth: number,
   sourceHeight: number,
   bounds: Dimensions
 ): Promise<HTMLCanvasElement> {
-  const scale = Math.min(bounds.width / sourceWidth, bounds.height / sourceHeight);
+  const requestedScale = Math.min(bounds.width / sourceWidth, bounds.height / sourceHeight);
+  const target = constrainDimensions({ width: sourceWidth * requestedScale, height: sourceHeight * requestedScale });
+  const scale = Math.min(target.width / sourceWidth, target.height / sourceHeight);
+
+  // Scale the DOM inside a correctly sized export frame. html2canvas's
+  // foreignObject renderer crops content when its own scale is below 1.
+  // Keeping that scale at 1 also bounds canvas memory for very large boards.
+  Object.assign(clone.style, {
+    width: `${sourceWidth}px`, height: `${sourceHeight}px`, boxSizing: "border-box",
+    transform: `scale(${scale})`, transformOrigin: "top left",
+  });
+  Object.assign(wrapper.style, {
+    width: `${target.width}px`, height: `${target.height}px`, overflow: "hidden",
+  });
 
   const options = {
     backgroundColor: "#ffffff",
     // Lad browseren tegne teksten samlet. Standard-rendereren opdeler tekst i
     // ord og kan derfor forskyde mellemrum ved de store eksportskaleringer.
     foreignObjectRendering: true,
-    height: sourceHeight,
+    height: target.height,
     logging: false,
-    scale,
+    scale: 1,
     useCORS: true,
-    width: sourceWidth,
-    windowHeight: Math.max(document.documentElement.clientHeight, sourceHeight),
-    windowWidth: Math.max(document.documentElement.clientWidth, sourceWidth),
+    width: target.width,
+    windowHeight: document.documentElement.clientHeight,
+    windowWidth: document.documentElement.clientWidth,
   };
 
-  return html2canvas(clone, options);
+  return html2canvas(wrapper, options);
 }
 
 function makePaperFrame(
@@ -239,12 +254,13 @@ export async function exportDissk(
   root: HTMLElement | null,
   opts: DownloadOptions
 ) {
-  if (!root) return;
+  if (!root) throw new Error("Din DISSK er ikke klar til eksport. Prøv igen, når den er indlæst.");
 
   const { wrapper, clone } = prepareClone(root);
 
   try {
     await document.fonts?.ready;
+    applyExportBoxLayout(clone, opts.boxLayout ?? "dynamic");
 
     const sourceWidth = Math.ceil(Math.max(clone.scrollWidth, clone.offsetWidth));
     const sourceHeight = Math.ceil(Math.max(clone.scrollHeight, clone.offsetHeight));
@@ -254,6 +270,7 @@ export async function exportDissk(
 
     const bounds = getRenderBounds(opts.size, sourceWidth, sourceHeight);
     const contentCanvas = await renderHighResolution(
+      wrapper,
       clone,
       sourceWidth,
       sourceHeight,
@@ -271,6 +288,7 @@ export async function exportDissk(
     downloadBlob(await canvasToBlob(finalCanvas), "dissk.png");
   } catch (err) {
     console.error("[exportDissk] Failed to export:", err);
+    throw err;
   } finally {
     wrapper.remove();
   }

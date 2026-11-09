@@ -112,6 +112,7 @@ export default function InputColumn({ doc, patch, theme }: Props) {
       <div style={labelStyle}>Input</div>
 
       <CustomQuill
+        fieldType="input"
         value={doc.input || ""}
         onChange={(html: string) => {
           if ((doc.input || "") === html) return;

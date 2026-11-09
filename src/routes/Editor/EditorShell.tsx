@@ -137,6 +137,7 @@ export default function EditorShell() {
   const [projectAccess, setProjectAccess] = useState<"owner" | "read" | "write">("owner");
   const [zoom, setZoom] = useState(1);
   const [zoomMode, setZoomMode] = useState<"auto" | "manual">("auto");
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [showShare, setShowShare] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -564,8 +565,8 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
     const panel = panelRef.current;
     const scroll = scrollRef.current;
 
-    const panelW = panel.scrollWidth;
-    const panelH = panel.scrollHeight;
+    const panelW = Math.max(panel.scrollWidth, panel.offsetWidth) + 32;
+    const panelH = Math.max(panel.scrollHeight, panel.offsetHeight) + 32;
     const vw = scroll.clientWidth;
     const vh = scroll.clientHeight;
 
@@ -575,9 +576,9 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
 
     const desired = Math.min(1, fitW, fitH);
 
-    const MIN_Z = 0.3;
+    const MIN_Z = 0.05;
     const MAX_Z = 1;
-    const EPS = 0.02;
+    const EPS = 0.001;
 
     const clamped = Math.max(MIN_Z, Math.min(MAX_Z, desired));
 
@@ -593,15 +594,22 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
   useEffect(() => {
     // Tilslut først efter dokumentets canvas er monteret. Manuel zoom skal
     // hverken genberegnes ved gemning eller ændringer i dokumentets layout.
-    if (!canvasId || zoomMode !== "auto" || !panelRef.current || !scrollRef.current) return;
+    if (!canvasId || !panelRef.current || !scrollRef.current) return;
 
     // Auto viser hele skemaet fra øverste venstre hjørne, også efter manuel rulning.
-    scrollRef.current.scrollTo({ left: 0, top: 0 });
+    if (zoomMode === "auto") scrollRef.current.scrollTo({ left: 0, top: 0 });
 
     let raf = 0;
     const schedule = () => {
       if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => autoFit());
+      raf = requestAnimationFrame(() => {
+        const panel = panelRef.current;
+        if (!panel) return;
+        const width = Math.max(panel.scrollWidth, panel.offsetWidth) + 32;
+        const height = Math.max(panel.scrollHeight, panel.offsetHeight) + 32;
+        setCanvasSize((previous) => previous.width === width && previous.height === height ? previous : { width, height });
+        if (zoomMode === "auto") autoFit();
+      });
     };
 
     const ro = new ResizeObserver(() => schedule());
@@ -782,23 +790,26 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
         className="editor-scroll"
         style={{
           width: "100vw",
-          height: "calc(100vh - 64px)",
-          overflow: zoomMode === "auto" ? "hidden" : "auto",
+          height: "calc(100vh - 56px)",
+          marginTop: 56,
+          overflow: "auto",
           position: "relative",
           background: "#fff",
         }}
       >
         <div
+          data-canvas-extent
           style={{
-            transform: `scale(${zoom})`,
-            transformOrigin: "top left",
-            display: "inline-block",
-            marginTop: 64,
-            padding: 16,
             position: "relative",
-            overflow: "visible",
+            overflow: "hidden",
+            width: canvasSize.width * zoom,
+            height: canvasSize.height * zoom,
           }}
         >
+          <div
+            data-editor-zoom
+            style={{ position: "absolute", top: 0, left: 0, width: "max-content", padding: 16, transform: `scale(${zoom})`, transformOrigin: "top left" }}
+          >
           <CanvasPanel
             doc={doc}
             patch={patch}
@@ -807,6 +818,7 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
             panelRef={panelRef}
             midMarkerRef={midMarkerRef}
           />
+          </div>
         </div>
       </div>
 
@@ -824,7 +836,7 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
         <button
           onClick={() => {
             setZoomMode("manual");
-            setZoom((z) => Math.max(z - 0.1, 0.3));
+            setZoom((z) => Math.max(z - 0.1, 0.05));
           }}
           style={zoomBtn}
         >

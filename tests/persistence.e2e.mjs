@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { after, before, test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
+import { readFile } from 'node:fs/promises';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -224,5 +225,32 @@ test('rejected save is visible and retry succeeds without recreating a deleted p
     await page.getByRole('button', { name: 'Prøv at gemme igen' }).click();
     await page.locator('[data-save-state="saved"]').waitFor();
     assert.equal((await db.doc(`projects/${id}`).get()).get('title'), 'Bevar denne ændring');
+  } finally { await context.close(); }
+});
+
+test('download controls export the selected layout and report rendering errors visibly', async () => {
+  const id = crypto.randomUUID();
+  await db.doc(`projects/${id}`).set(document(id));
+  const { context, page } = await session();
+  try {
+    await page.goto(`${base}/editor/${id}`);
+    await page.locator('.ql-editor').first().waitFor();
+    await page.locator('[title="Menu"]').click();
+    await page.getByRole('menuitem', { name: 'Download', exact: true }).click();
+    await page.getByLabel('Størrelse', { exact: true }).selectOption('A4');
+    await page.getByLabel('Format', { exact: true }).selectOption('pdf');
+    await page.getByLabel('Kassehøjde', { exact: true }).selectOption('uniform');
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Eksporter', exact: true }).click();
+    const data = await readFile(await (await downloadPromise).path());
+    assert.equal(data.subarray(0, 5).toString(), '%PDF-');
+    assert.equal((await db.doc(`projects/${id}`).get()).get('updatedAt').toMillis(), 2000, 'export does not edit the saved project');
+
+    await page.locator('[title="Menu"]').click();
+    await page.getByRole('menuitem', { name: 'Download', exact: true }).click();
+    assert.equal(await page.getByLabel('Kassehøjde', { exact: true }).inputValue(), 'uniform');
+    await page.evaluate(() => { HTMLCanvasElement.prototype.getContext = () => null; });
+    await page.getByRole('button', { name: 'Eksporter', exact: true }).click();
+    await page.getByRole('alert').filter({ hasText: 'kunne ikke eksporteres' }).waitFor();
   } finally { await context.close(); }
 });

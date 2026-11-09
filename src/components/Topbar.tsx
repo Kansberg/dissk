@@ -46,6 +46,7 @@ export default function Topbar({
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [anonWarning, setAnonWarning] = useState<null | string>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Profile menu
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -135,6 +136,7 @@ useEffect(() => {
     if (!onDownloadRequested || isExporting) return;
 
     setShowDownloadModal(false);
+    setExportError(null);
     setIsExporting(true);
 
     try {
@@ -142,6 +144,9 @@ useEffect(() => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       });
       await onDownloadRequested(options);
+    } catch (error) {
+      console.error("[Topbar:export]", error);
+      setExportError("Din DISSK kunne ikke eksporteres. Prøv igen, eller vælg en lavere opløsning.");
     } finally {
       setIsExporting(false);
     }
@@ -236,6 +241,12 @@ const ToggleRow = ({
       {isExporting && <ExportLoadingOverlay />}
 
       {/* LOGIN MODAL */}
+      {exportError && (
+        <div role="alert" style={{ position: "fixed", top: 64, left: 16, right: 16, zIndex: 9999, background: "#fef2f2", color: "#991b1b", padding: 16, borderRadius: 8 }}>
+          {exportError}{" "}
+          <button onClick={() => setExportError(null)}>Luk</button>
+        </div>
+      )}
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
 
       {/* ANONYM-ADVARSEL */}

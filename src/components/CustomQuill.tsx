@@ -284,6 +284,14 @@ export default function CustomQuill({
     <div
       ref={wrapperRef}
       data-fieldtype={fieldType}
+      data-export-row={
+        fieldType === "time" || fieldType?.startsWith("outputTime") ? "time"
+          : fieldType === "assump" || fieldType?.startsWith("outputAssump") ? "assumption"
+          : fieldType === "mid" || fieldType?.startsWith("outputMid") ? "step"
+          : fieldType === "sign" || fieldType?.startsWith("outputSign") ? "sign"
+          : fieldType?.startsWith("effects") ? "effects"
+          : fieldType || "input"
+      }
       style={wrapperStyle}
       onClick={() => {
         setActive(true);
