@@ -7,11 +7,13 @@ Under **Kassehøjde** kan der vælges:
 
 - **Dynamiske – højde efter indhold:** Hver kasse følger sin egen tekst.
 - **Ens højde pr. række:** Alle kasser i den samme række får højde efter den
-  højeste kasse i rækken. Tid & ansvar, Antagelser, Trin/Output og Tegn behandles
+  højeste kasse i rækken. Tid & ansvar, Antagelser, Input/Trin/Output og Tegn behandles
   hver for sig. De to effektkasser udgør deres egen række.
 
 Valget ændrer kun eksporten. Indhold, farver og det gemte projekt bevares.
 Kontekst medtages, når kontekstvisning er slået til i projektet.
+Input, Trin og Output står på samme vandrette linje. Kontekst står øverst i
+højre kolonne med effekterne nedenunder, både i editoren og i eksporten.
 
 Klik **Eksporter** og vent på download. Hele skemaet placeres på én PDF-side.
 Et stort skema kan derfor se småt ud ved "Tilpas til side" i PDF-læseren;

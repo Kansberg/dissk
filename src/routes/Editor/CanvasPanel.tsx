@@ -54,7 +54,7 @@ const symbols = ((doc as any).stepSymbols ?? {}) as Record<string, string>;
 
 
   const gridTemplateColumns = (() => {
-    const cols: string[] = [];
+    const cols: string[] = [`minmax(${MIN_COL_W}px, ${MIN_COL_W}px)`];
     for (const step of doc.steps) {
       cols.push(`minmax(${MIN_COL_W}px, ${MIN_COL_W}px)`);
       if (symbols[step.id]) {
@@ -63,11 +63,12 @@ const symbols = ((doc as any).stepSymbols ?? {}) as Record<string, string>;
       }
     }
     cols.push(`minmax(${MIN_COL_W}px, ${MIN_COL_W}px)`);
+    cols.push(`repeat(2, minmax(${MIN_COL_W}px, ${MIN_COL_W}px))`);
     return cols.join(" ");
   })();
 
   const outputCol =
-    1 + doc.steps.length + doc.steps.filter((s) => symbols[s.id]).length;
+    2 + doc.steps.length + doc.steps.filter((s) => symbols[s.id]).length;
 
 const gridKey =
   "grid-" +
@@ -87,46 +88,36 @@ const gridKey =
         padding: 16,
         borderRadius: RADIUS,
         border: isExport ? "none" : `2px dashed ${C.edge}`,
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "center",
-        gap: GAP * 2,
+        display: "grid",
+        gridTemplateColumns,
+        gridTemplateRows: "auto auto auto auto auto auto auto auto auto",
+        columnGap: GAP,
+        rowGap: 12,
         background: "transparent",
       }}
     >
       {/* ----------- VENSTRE KOLONNE ----------- */}
       <div
         style={{
-          width: MIN_COL_W,
-          flexShrink: 0,
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
+          display: "contents",
         }}
       >
         <InputColumn doc={doc} patch={patch} theme={{ C, RADIUS }} />
       </div>
 
       {/* ----------- MIDTERKOLONNE (TRIN) ----------- */}
-      <div style={{ position: "relative" }}>
+      <div style={{ display: "contents" }}>
         <div
           key={gridKey}
           style={{
-            display: "grid",
-            gridTemplateColumns,
-            gridTemplateRows: `auto auto auto auto auto auto auto auto auto`,
-            columnGap: GAP,
-            rowGap: 12,
-            overflow: "visible",
-            position: "relative",
-            transition: "all 0.1s ease-in-out",
+            display: "contents",
           }}
         >
           <MiddleGrid
             doc={doc}
             patch={patch}
             patchStepField={patchStepField}
-            gridStartCol={1}
+            gridStartCol={2}
             outputCol={outputCol}
             theme={{ C, RADIUS }}
             midMarkerRef={midMarkerRef}
@@ -140,7 +131,11 @@ const gridKey =
           display: "grid",
           gridTemplateColumns: `repeat(2, minmax(${MIN_COL_W}px, ${MIN_COL_W}px))`,
           columnGap: GAP,
-          flexShrink: 0,
+          rowGap: 12,
+          gridColumn: `${outputCol + 1} / span 2`,
+          gridRow: "1 / span 9",
+          alignSelf: "start",
+          alignContent: "start",
           position: "relative",
         }}
       >

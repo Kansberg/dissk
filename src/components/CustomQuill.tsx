@@ -287,7 +287,7 @@ export default function CustomQuill({
       data-export-row={
         fieldType === "time" || fieldType?.startsWith("outputTime") ? "time"
           : fieldType === "assump" || fieldType?.startsWith("outputAssump") ? "assumption"
-          : fieldType === "mid" || fieldType?.startsWith("outputMid") ? "step"
+          : fieldType === "input" || fieldType === "mid" || fieldType?.startsWith("outputMid") ? "step"
           : fieldType === "sign" || fieldType?.startsWith("outputSign") ? "sign"
           : fieldType?.startsWith("effects") ? "effects"
           : fieldType || "input"

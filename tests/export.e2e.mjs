@@ -44,20 +44,30 @@ test('dynamic heights follow text, uniform heights match their row, and editor c
     const result = await page.evaluate(async () => {
       const { applyExportBoxLayout } = await import('/src/utils/exportLayout.ts');
       const panel = document.querySelector('[data-editor-zoom]').firstElementChild;
+      const positions = root => Object.fromEntries(['input', 'mid', 'outputMid', 'context'].map(type => {
+        const element = root.querySelector(type === 'outputMid' ? '[data-fieldtype^="outputMid"]' : `[data-fieldtype="${type}"]`);
+        const rect = element.getBoundingClientRect();
+        return [type, { top: rect.top, left: rect.left, right: rect.right }];
+      }));
+      const editorPositions = positions(panel);
       const before = panel.outerHTML;
       const clone = panel.cloneNode(true);
       clone.style.transform = 'none';
+      clone.style.position = 'fixed'; clone.style.left = '0'; clone.style.top = '0';
       document.body.appendChild(clone);
       const heights = row => [...clone.querySelectorAll(`[data-export-row="${row}"]`)].map(el => el.getBoundingClientRect().height);
       applyExportBoxLayout(clone, 'dynamic');
       const dynamic = heights('sign');
+      const dynamicPositions = positions(clone);
       const maximumNaturalHeight = Math.max(...dynamic);
       applyExportBoxLayout(clone, 'uniform');
       const uniform = heights('sign');
       const effects = heights('effects');
+      const uniformPositions = positions(clone);
       const allContentFits = [...clone.querySelectorAll('.ql-editor')].every(el => el.scrollHeight <= el.clientHeight + 1);
       clone.remove();
-      return { dynamic, uniform, effects, maximumNaturalHeight, allContentFits, unchanged: panel.outerHTML === before };
+      return { dynamic, uniform, effects, maximumNaturalHeight, allContentFits, unchanged: panel.outerHTML === before,
+        editorPositions, dynamicPositions, uniformPositions };
     });
     assert(result.dynamic[0] > 5000, 'fixture exercises a source taller than the Original export');
     assert(result.dynamic[1] < 100, 'short boxes shrink to their own content');
@@ -65,6 +75,11 @@ test('dynamic heights follow text, uniform heights match their row, and editor c
     assert(Math.abs(result.effects[0] - result.effects[1]) <= 1, 'effect boxes form their own uniform row');
     assert(result.allContentFits, 'text has no hidden internal scroll area');
     assert(result.unchanged, 'export layout does not change saved/editor content');
+    for (const positions of [result.editorPositions, result.dynamicPositions, result.uniformPositions]) {
+      assert(Math.abs(positions.input.top - positions.mid.top) < 1, 'Input aligns with Trin');
+      assert(Math.abs(positions.input.top - positions.outputMid.top) < 1, 'Output aligns with Input and Trin');
+      assert(positions.context.top < positions.mid.top && positions.context.left > positions.outputMid.left, 'Context starts at the top of the right column');
+    }
   } finally { await context.close(); }
 });
 

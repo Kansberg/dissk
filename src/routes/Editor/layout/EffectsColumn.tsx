@@ -142,11 +142,11 @@ export default function EffectsColumn({ doc, patch, theme }: Props) {
       )}
 
       {/* ---------- KORTSIGTET EFFEKT ---------- */}
-      <div style={{ gridColumn: "1", gridRow: "5", ...labelStyle }}>
+      <div style={{ gridColumn: "1", gridRow: doc.showContext ? "3" : "1", ...labelStyle }}>
         Kortsigtet effekt
       </div>
 
-      <div style={{ gridColumn: "1", gridRow: "6" }}>
+      <div style={{ gridColumn: "1", gridRow: doc.showContext ? "4" : "2" }}>
         <CustomQuill
           key="effects-short"
           fieldType="effectsShort"
@@ -175,11 +175,11 @@ export default function EffectsColumn({ doc, patch, theme }: Props) {
       </div>
 
       {/* ---------- LANGSIGTET EFFEKT ---------- */}
-      <div style={{ gridColumn: "2", gridRow: "5", ...labelStyle }}>
+      <div style={{ gridColumn: "2", gridRow: doc.showContext ? "3" : "1", ...labelStyle }}>
         Langsigtet effekt
       </div>
 
-      <div style={{ gridColumn: "2", gridRow: "6" }}>
+      <div style={{ gridColumn: "2", gridRow: doc.showContext ? "4" : "2" }}>
         <CustomQuill
           key="effects-long"
           fieldType="effectsLong"

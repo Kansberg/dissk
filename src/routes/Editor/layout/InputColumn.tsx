@@ -95,7 +95,9 @@ export default function InputColumn({ doc, patch, theme }: Props) {
     color: C.brand,
     fontSize: 14,
     fontFamily: "Arial, sans-serif",
-    marginBottom: 4,
+    marginBottom: 0,
+    gridColumn: "1",
+    gridRow: "5",
   };
 
   console.log("[InputColumn:render]", {
@@ -108,11 +110,12 @@ export default function InputColumn({ doc, patch, theme }: Props) {
   });
 
   return (
-    <div style={{ width: "100%" }} ref={containerRef}>
+    <div style={{ display: "contents" }} ref={containerRef}>
       <div style={labelStyle}>Input</div>
 
       <CustomQuill
         fieldType="input"
+        style={{ gridColumn: "1", gridRow: "6", height: "100%" }}
         value={doc.input || ""}
         onChange={(html: string) => {
           if ((doc.input || "") === html) return;
