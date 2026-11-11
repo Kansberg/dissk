@@ -24,12 +24,11 @@ than stale local caches, so undo restores both saved and displayed colours.
 
 Recovery backups previously retained only the last eight completed uploads. A
 short editing session could therefore remove every version from before an
-incident. Retention now keeps the eight latest versions, the first version from
-each of the 24 latest distinct UTC hours and the first version from each of the
-30 latest distinct UTC days. The current latest-backup pointer is also protected
-against pruning after out-of-order uploads. There are at most 63 versions per backup. Selection
-uses server completion times. This improves future recovery; previously deleted
-versions cannot be brought back by changing the retention policy.
+incident. After an initial change to keep hourly/daily checkpoints, the explicit
+retention requirement is now to keep ALL snapshots. There is no automatic expiry,
+count limit or pruning. Uploads only advance the latest-version pointer and never
+remove older snapshot documents or their parts. Previously deleted versions
+cannot be brought back by changing this policy.
 
 ## Validation
 
@@ -37,8 +36,9 @@ versions cannot be brought back by changing the retention policy.
   an eleventh column, exact undo, save/reload, editing larger boards, deleted
   columns, project boundaries, text, colours, sharing and save failure handling.
 - Export and zoom browser tests: 15 passed, including both export box layouts.
-- Recovery retention tests: 3 passed, including repeated pruning across 40 days
-  and out-of-order uploads.
+- Recovery integration test uploads through the emulated Firebase Function and
+  verifies that all 72 versions and their content survive, including 70 historical
+  versions, retries and a rejected attempt to overwrite a snapshot ID.
 - Frontend and Functions TypeScript builds pass.
 
 Incident records and original production copies are stored outside the repository.

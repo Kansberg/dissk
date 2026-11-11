@@ -9,7 +9,6 @@ import { logger } from "firebase-functions";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
-import { recoverySnapshotsToKeep } from "./recoveryRetention";
 
 initializeApp();
 
@@ -393,15 +392,7 @@ export const saveRecoveryBackup = onCall(
       }, { merge: true });
     });
 
-    const versions = await backupRef.collection("snapshots").orderBy("completedAt", "desc").get();
-    const latestBackup = await backupRef.get();
-    const keep = recoverySnapshotsToKeep(versions.docs.map(version => ({
-      id: version.id,
-      completedAtMillis: (version.get("completedAt") as Timestamp).toMillis(),
-    })), latestBackup.get("latestSnapshotId"));
-    for (const oldVersion of versions.docs) {
-      if (!keep.has(oldVersion.id)) await db.recursiveDelete(oldVersion.ref);
-    }
+    // Keep every snapshot. Updating the latest pointer must never prune history.
     return { backupId, snapshotId };
   }
 );

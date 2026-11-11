@@ -9,7 +9,10 @@ før kopien findes i Firebase.
 Kopierne ligger under `recoveryBackups/{id}` med titel, oprettelsesdato,
 seneste tidspunkt, eventuel login-e-mail, projektnummer og søgetekst. Indholdet
 ligger i nummererede dele under `snapshots/{snapshotId}/parts`; SHA-256
-kontrolleres ved eksport. De seneste otte snapshots per projekt beholdes.
+kontrolleres ved eksport. Alle snapshots beholdes uden tids- eller antalsgrænse.
+Nye uploads opdaterer kun henvisningen til den seneste version; tidligere
+snapshots og deres indhold slettes ikke automatisk. Gentagelse af samme upload
+bevarer den eksisterende version, og samme snapshot-ID med ændret indhold afvises.
 Firestore-reglerne afviser alle browserklienter, også administratorer i appen.
 Firebase-adgang via IAM/Admin SDK kræves for at læse kopierne.
 

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { initializeApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
@@ -7,7 +8,7 @@ import { connectFirestoreEmulator, doc, getDoc, getFirestore } from 'firebase/fi
 
 const require = createRequire(import.meta.url);
 const { initializeApp: initializeAdmin } = require('../functions/node_modules/firebase-admin/lib/app/index.js');
-const { getFirestore: getAdminFirestore } = require('../functions/node_modules/firebase-admin/lib/firestore/index.js');
+const { getFirestore: getAdminFirestore, Timestamp } = require('../functions/node_modules/firebase-admin/lib/firestore/index.js');
 
 const app = initializeApp({ apiKey: 'demo', authDomain: 'demo-dissk.firebaseapp.com', projectId: 'demo-dissk', appId: '1:1:web:test' });
 const auth = getAuth(app);
@@ -45,4 +46,38 @@ const parts = await snapshot.ref.collection('parts').orderBy('__name__').get();
 assert.equal(parts.docs.map((part) => part.get('text')).join(''), content);
 await assert.rejects(getDoc(doc(firestore, 'recoveryBackups', result.backupId)), (error) => error.code === 'permission-denied');
 console.log('Recovery backup: upload, private read and full-content reconstruction passed');
+
+// More versions than either former retention policy allowed, including old days.
+const historical = Array.from({ length: 70 }, (_, i) => {
+  const capturedAtClient = Date.now() - (i + 1) * 86_400_000;
+  const text = JSON.stringify({ id: projectId, title: `Version ${i}`, input: `Bevar hele denne tekst ${i}` });
+  return { id: crypto.randomUUID(), capturedAtClient, text };
+});
+const seed = adminDb.batch();
+for (const old of historical) {
+  const ref = backup.ref.collection('snapshots').doc(old.id);
+  seed.set(ref, { complete: true, sha256: createHash('sha256').update(old.text).digest('hex'),
+    partCount: 1, byteLength: Buffer.byteLength(old.text), capturedAtClient: old.capturedAtClient,
+    uploadedAt: Timestamp.fromMillis(old.capturedAtClient), completedAt: Timestamp.fromMillis(old.capturedAtClient) });
+  seed.set(ref.collection('parts').doc('0000'), { text: old.text });
+}
+await seed.commit();
+const next = { ...data, snapshotId: crypto.randomUUID(), capturedAtClient: Date.now(),
+  content: JSON.stringify({ id: projectId, title: 'Nyeste version', input: 'Ny tekst' }) };
+await upload(next);
+assert.equal((await backup.ref.collection('snapshots').get()).size, 72, 'all older snapshots survive another upload');
+for (const old of historical) {
+  const ref = backup.ref.collection('snapshots').doc(old.id);
+  assert((await ref.get()).exists, `version ${old.id} retained`);
+  assert.equal((await ref.collection('parts').doc('0000').get()).get('text'), old.text);
+}
+assert.equal((await backup.ref.get()).get('latestSnapshotId'), next.snapshotId);
+await upload(data); // Retry an earlier completed upload without losing newer data.
+assert.equal((await backup.ref.collection('snapshots').get()).size, 72);
+assert.equal((await backup.ref.get()).get('latestSnapshotId'), next.snapshotId);
+const conflicting = { ...data, content: JSON.stringify({ title: 'Må ikke overskrive historik' }) };
+await assert.rejects(upload(conflicting), error => error.code === 'functions/already-exists');
+const originalParts = await snapshot.ref.collection('parts').orderBy('__name__').get();
+assert.equal(originalParts.docs.map(part => part.get('text')).join(''), content);
+console.log('Recovery backup: all 72 versions and their content retained, retry safe and conflicting overwrite rejected');
 process.exit(0);
