@@ -7,7 +7,6 @@ import {
   type CSSProperties,
 } from "react";
 import CustomQuill from "../../../components/CustomQuill";
-import { useUndo } from "../../../context/UndoContext";
 
 type Props = {
   doc: Doc;
@@ -16,7 +15,6 @@ type Props = {
 };
 
 export default function EffectsColumn({ doc, patch, theme }: Props) {
-  const { addToHistory } = useUndo();
   const { RADIUS } = theme;
 
 
@@ -115,14 +113,12 @@ export default function EffectsColumn({ doc, patch, theme }: Props) {
               value={doc.context || ""}
               onChange={(html: string) => {
                 if ((doc.context || "") === html) return;
-                addToHistory(doc);
                 patch({ context: html });
               }}
 
               onBoxColorChange={(color: string) => {
                 const currentColor = doc.styles?.context?.bg || "#f8fafc";
                 if (color === currentColor) return;
-                addToHistory(doc);
                 const nextStyles = {
                   ...(doc.styles || {}),
                   context: { bg: color },
@@ -154,13 +150,11 @@ export default function EffectsColumn({ doc, patch, theme }: Props) {
           value={doc.effects?.short || ""}
           onChange={(html: string) => {
             if ((doc.effects?.short || "") === html) return;
-            addToHistory(doc);
             safePatch({ effects: { ...doc.effects, short: html } }, "short:change");
           }}
           onBoxColorChange={(color: string) => {
             const currentColor = doc.styles?.effectsShort?.bg || "#ffffff";
             if (color === currentColor) return;
-            addToHistory(doc);
             const nextStyles = {
               ...(doc.styles || {}),
               effectsShort: { bg: color },
@@ -187,13 +181,11 @@ export default function EffectsColumn({ doc, patch, theme }: Props) {
           value={doc.effects?.long || ""}
           onChange={(html: string) => {
             if ((doc.effects?.long || "") === html) return;
-            addToHistory(doc);
             safePatch({ effects: { ...doc.effects, long: html } }, "long:change");
           }}
           onBoxColorChange={(color: string) => {
             const currentColor = doc.styles?.effectsLong?.bg || "#ffffff";
             if (color === currentColor) return;
-            addToHistory(doc);
             const nextStyles = {
               ...(doc.styles || {}),
               effectsLong: { bg: color },

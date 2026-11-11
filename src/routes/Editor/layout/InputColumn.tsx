@@ -1,7 +1,6 @@
 import type { Doc } from "../../../types/editor";
 import { useEffect, useMemo, useRef, useState } from "react";
 import CustomQuill from "../../../components/CustomQuill";
-import { useUndo } from "../../../context/UndoContext";
 
 type Props = {
   doc: Doc;
@@ -15,7 +14,6 @@ const preview = (s: string, n = 60) =>
 
 export default function InputColumn({ doc, patch, theme }: Props) {
   const { C } = theme;
-  const { addToHistory } = useUndo();
 
   const seqRef = useRef(0);
   const mountTime = useRef(Date.now());
@@ -30,12 +28,6 @@ export default function InputColumn({ doc, patch, theme }: Props) {
   const [boxColor, setBoxColor] = useState<string>(docBoxColor);
 
   useEffect(() => {
-    const hasValidDocColor = !!(doc as any)?.styles?.input?.bg;
-    if (!hasValidDocColor) {
-      console.log("[InputColumn] docBoxColor mangler — bevarer UI boxColor");
-      return;
-    }
-
     if (docBoxColor !== boxColor) {
       console.log("[InputColumn] Opdaterer farve fra doc:", { from: boxColor, to: docBoxColor });
       setBoxColor(docBoxColor);
@@ -119,7 +111,6 @@ export default function InputColumn({ doc, patch, theme }: Props) {
         value={doc.input || ""}
         onChange={(html: string) => {
           if ((doc.input || "") === html) return;
-          addToHistory(doc);
           patch({ input: html });
         }}
 
@@ -140,9 +131,6 @@ export default function InputColumn({ doc, patch, theme }: Props) {
             ...currentStyles,
             input: { ...(currentStyles.input || {}), bg: color },
           };
-
-          // 👉 Læg den NUVÆRENDE tilstand i historikken (før ændringen)
-          addToHistory(doc);
 
           // Gem kun styles (som før)
           safePatch(({ ...( { styles: nextStyles } as any ) }) as Partial<Doc>, "boxColorChange");

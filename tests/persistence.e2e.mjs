@@ -254,3 +254,121 @@ test('download controls export the selected layout and report rendering errors v
     await page.getByRole('alert').filter({ hasText: 'kunne ikke eksporteres' }).waitFor();
   } finally { await context.close(); }
 });
+
+async function addAfterFirst(page) {
+  await page.locator('[data-fieldtype="mid"] .ql-editor').first().hover();
+  await page.getByRole('button', { name: 'Tilføj kolonne', exact: true }).click();
+}
+
+test('adding the eleventh column keeps every existing field and undo restores the exact previous board', async () => {
+  const id = crypto.randomUUID();
+  const original = document(id, 'Ti trin');
+  original.steps = Array.from({ length: 10 }, (_, i) => ({
+    id: String(i + 1), title: `<p>Trin ${i + 1} med indhold</p>`, time: `Tid ${i}`,
+    assumption: `Antagelse ${i}`, sign: `Tegn ${i}`,
+  }));
+  original.stepSymbols = { '1': 'right', '10': 'cycle' };
+  original.styles = { mid: { '1': { bg: '#ff0000' } } };
+  await db.doc(`projects/${id}`).set(original);
+  const { context, page } = await session();
+  try {
+    await page.goto(`${base}/editor/${id}`);
+    const undo = page.getByRole('button', { name: 'Fortryd', exact: true });
+    await undo.waitFor();
+    assert(await undo.isDisabled());
+    assert.equal(await page.locator('[data-step-advice]').count(), 0);
+    await addAfterFirst(page);
+    await page.waitForFunction(() => document.querySelectorAll('[data-col-anchor]').length === 11);
+    await page.locator('[data-save-state="saved"]').waitFor();
+    const added = (await db.doc(`projects/${id}`).get()).data();
+    assert.equal(added.steps.length, 11);
+    assert.deepEqual([added.steps[0], ...added.steps.slice(2)], original.steps);
+    assert(!original.steps.some(s => s.id === added.steps[1].id));
+    assert.deepEqual(added.stepSymbols, original.stepSymbols);
+    assert.deepEqual(added.styles, original.styles, 'numeric step IDs remain keys in style maps');
+    assert.match(await page.locator('[data-step-advice]').innerText(), /del-DISSK/);
+    assert(await undo.isEnabled());
+    await undo.click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-col-anchor]').length === 10);
+    await page.locator('[data-save-state="saved"]').waitFor();
+    const restored = (await db.doc(`projects/${id}`).get()).data();
+    assert.deepEqual(restored.steps, original.steps);
+    assert.deepEqual(restored.styles, original.styles);
+    assert.deepEqual(restored.stepSymbols, original.stepSymbols);
+    assert(await undo.isDisabled(), 'one edit needs exactly one undo');
+    assert.equal(await page.locator('[data-step-advice]').count(), 0);
+    await addAfterFirst(page);
+    await page.locator('[data-save-state="saved"]').waitFor();
+    await page.reload();
+    await page.waitForFunction(() => document.querySelectorAll('[data-col-anchor]').length === 11);
+    await page.locator('[data-fieldtype="mid"] .ql-editor').first().fill('Opdateret første trin');
+    await page.locator('[data-save-state="saved"]').waitFor();
+    const edited = (await db.doc(`projects/${id}`).get()).data();
+    assert.equal(edited.steps.length, 11, 'field editing also preserves all steps');
+    assert.equal(edited.steps[0].id, original.steps[0].id);
+    assert.deepEqual(edited.steps.slice(2), original.steps.slice(1));
+  } finally { await context.close(); }
+});
+
+test('undo restores a deleted column including symbols, then respects the history boundary of another project', async () => {
+  const id = crypto.randomUUID(), otherId = crypto.randomUUID();
+  const original = document(id);
+  original.steps.push({ ...original.steps[0], id: 'second', title: '<p>Andet trin</p>' });
+  original.stepSymbols = { '1': 'right' };
+  await db.doc(`projects/${id}`).set(original);
+  await db.doc(`projects/${otherId}`).set(document(otherId, 'Andet projekt'));
+  const { context, page } = await session();
+  try {
+    await page.goto(`${base}/editor/${id}`);
+    await page.locator('[data-fieldtype="mid"] .ql-editor').first().hover();
+    page.once('dialog', dialog => dialog.accept());
+    await page.getByRole('button', { name: 'Fjern kolonne', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-col-anchor]').length === 1);
+    await page.getByRole('button', { name: 'Fortryd', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-col-anchor]').length === 2);
+    await page.locator('[data-save-state="saved"]').waitFor();
+    const restored = (await db.doc(`projects/${id}`).get()).data();
+    assert.deepEqual(restored.steps, original.steps);
+    assert.deepEqual(restored.stepSymbols, original.stepSymbols);
+    const title = page.getByRole('textbox', { name: 'Redigér titel' });
+    await title.fill('Ændret titel');
+    await page.getByRole('button', { name: 'Fortryd', exact: true }).click();
+    assert.equal(await title.inputValue(), original.title);
+    await title.fill('Ny ændring');
+    await page.locator('img[alt="UCN Logo"]').click();
+    await page.getByText('Andet projekt', { exact: true }).click();
+    await page.waitForURL(`${base}/editor/${otherId}`);
+    await page.locator('.ql-editor').first().waitFor();
+    assert(await page.getByRole('button', { name: 'Fortryd', exact: true }).isDisabled());
+    assert.equal(await page.getByRole('textbox', { name: 'Redigér titel' }).inputValue(), 'Andet projekt');
+    assert.equal((await db.doc(`projects/${otherId}`).get()).get('updatedAt').toMillis(), 2000);
+  } finally { await context.close(); }
+});
+
+test('undo restores text and background colours on screen and in the saved document', async () => {
+  const id = crypto.randomUUID();
+  const original = document(id);
+  await db.doc(`projects/${id}`).set(original);
+  const { context, page } = await session();
+  try {
+    await page.goto(`${base}/editor/${id}`);
+    const field = page.locator('[data-fieldtype="mid"]');
+    const editor = field.locator('.ql-editor');
+    await editor.fill('Ny tekst');
+    const undo = page.getByRole('button', { name: 'Fortryd', exact: true });
+    await undo.click();
+    assert.match(await editor.innerText(), /Nyeste trin/);
+    assert(await undo.isDisabled());
+    const before = await field.evaluate(el => getComputedStyle(el).backgroundColor);
+    await editor.click();
+    await page.getByRole('button', { name: 'Baggrundsfarve', exact: true }).click();
+    await page.getByRole('button', { name: 'Sæt baggrundsfarve til #ef4444', exact: true }).click();
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-fieldtype="mid"]')).backgroundColor === 'rgb(239, 68, 68)');
+    await undo.click();
+    await page.waitForFunction(before => getComputedStyle(document.querySelector('[data-fieldtype="mid"]')).backgroundColor === before, before);
+    await page.locator('[data-save-state="saved"]').waitFor();
+    const restored = (await db.doc(`projects/${id}`).get()).data();
+    assert.deepEqual(restored.styles, original.styles);
+    assert.deepEqual(restored.steps, original.steps);
+  } finally { await context.close(); }
+});

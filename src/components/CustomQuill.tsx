@@ -3,7 +3,6 @@ import Quill from "quill";
 import "quill/dist/quill.snow.css";
 import { Palette, List, Type } from "lucide-react";
 import { createPortal } from "react-dom";
-import { useUndo } from "../context/UndoContext";
 
 type CustomQuillProps = {
   value: string;
@@ -69,7 +68,6 @@ export default function CustomQuill({
   const [active, setActive] = useState(false);
   const [showPicker, setShowPicker] = useState<"text" | "bg" | null>(null);
 
-  const { addToHistory } = useUndo();
 
   useEffect(() => {
     onRefReady?.(wrapperRef.current);
@@ -191,7 +189,6 @@ export default function CustomQuill({
     const html = q.root.innerHTML;
     lastValueRef.current = html;
     onChange(html);
-    addToHistory(html);
   };
 
   const wrapperStyle: React.CSSProperties = {
@@ -426,7 +423,6 @@ export default function CustomQuill({
                             const html = q.root.innerHTML;
                             lastValueRef.current = html;
                             onChange(html);
-                            addToHistory(html);
                             setShowPicker(null);
                           }}
                           style={{
@@ -477,7 +473,6 @@ export default function CustomQuill({
                               const q = quillRef.current;
                               const html = q?.root.innerHTML || "";
                               lastValueRef.current = html;
-                              addToHistory(html);
                             }}
                             style={{
                               ...dot,

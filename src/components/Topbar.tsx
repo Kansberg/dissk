@@ -17,6 +17,7 @@ type Props = {
   onRename?: (newTitle: string) => void;
   doc?: Doc;
   patch?: (partial: Partial<Doc>) => void;
+  onUndo?: () => void;
   onShareClick?: () => void;
   onToggleView?: () => void;    // beholdt for compat (ikke brugt)
   onSettingsClick?: () => void; // beholdt for compat (ikke brugt)
@@ -32,12 +33,13 @@ export default function Topbar({
   onRename,
   doc,
   patch,
+  onUndo,
   onShareClick,
   onDownloadRequested,
   saveStatus,
 }: Props) {
   const { user, logout } = useAuth();
-  const { undo, canUndo } = useUndo();
+  const { canUndo } = useUndo();
   const nav = useNavigate();
 
   // Modals / advarsler
@@ -125,12 +127,6 @@ useEffect(() => {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [showActionsMenu]);
-
-  const handleUndo = () => {
-    const prevDoc = undo();
-    if (!prevDoc || !patch) return;
-    patch(JSON.parse(JSON.stringify(prevDoc)));
-  };
 
   const handleExport = async (options: DownloadOptions) => {
     if (!onDownloadRequested || isExporting) return;
@@ -550,18 +546,27 @@ const ToggleRow = ({
               )}
             </div>
 
-            {/* Undo-knap (skjult – som før) */}
-            <div
-              title="Fortryd"
+            <button
+              type="button"
+              title="Fortryd seneste ændring i denne åbning af projektet"
+              disabled={!canUndo || !onUndo}
               style={{
                 cursor: canUndo ? "pointer" : "not-allowed",
                 opacity: canUndo ? 1 : 0.4,
-                display: "none",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                background: "transparent",
+                color: "inherit",
+                border: "1px solid currentColor",
+                borderRadius: 6,
+                padding: "6px 10px",
               }}
-              onClick={canUndo ? handleUndo : undefined}
+              onClick={onUndo}
             >
               <Undo2 size={22} />
-            </div>
+              Fortryd
+            </button>
           </div>
         ) : (
           <img

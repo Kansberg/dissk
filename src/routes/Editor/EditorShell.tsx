@@ -14,6 +14,7 @@ import { exportDissk } from "../../utils/exportDissk";
 import { EDITOR_THEME } from "./editorTheme";
 import { queueRecoveryBackup } from "../../utils/recoveryBackup";
 import { migrateLegacyProject } from "../../utils/projectMigration";
+import { useUndo } from "../../context/UndoContext";
 
 function deepMerge<T extends Record<string, any>>(base: T = {} as T, incoming: Partial<T> = {}): T {
   const out: any = Array.isArray(base) ? [...base] : { ...base };
@@ -132,6 +133,12 @@ export default function EditorShell() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth() as { user?: any };
+  const { addToHistory, undo, resetHistory } = useUndo();
+
+  useEffect(() => {
+    resetHistory();
+    return resetHistory;
+  }, [id, user?.uid, resetHistory]);
 
   const [doc, setDoc] = useState<(Doc & { styles?: any }) | null>(null);
   const [projectAccess, setProjectAccess] = useState<"owner" | "read" | "write">("owner");
@@ -395,7 +402,7 @@ if (typeof raw === "object") {
 /** ---------- Hjælpefunktion: Saml numeriske keys til arrays ---------- */
 function normalizeNumericKeys(obj: any, parentKey?: string): any {
   if (Array.isArray(obj)) {
-    return obj.slice(-10);
+    return obj.map((value) => normalizeNumericKeys(value));
   }
 
   if (obj && typeof obj === "object") {
@@ -405,11 +412,10 @@ function normalizeNumericKeys(obj: any, parentKey?: string): any {
     const keys = Object.keys(obj);
     const numericKeys = keys.filter((k) => /^\d+$/.test(k));
 
-    if (numericKeys.length === keys.length && numericKeys.length > 0) {
+    if (parentKey === "steps" && numericKeys.length === keys.length && numericKeys.length > 0) {
       const arr = numericKeys
         .sort((a, b) => Number(a) - Number(b))
-        .map((k) => (obj as any)[k])
-        .slice(-10);
+        .map((k) => normalizeNumericKeys((obj as any)[k]));
       return arr;
     }
 
@@ -426,6 +432,7 @@ function normalizeNumericKeys(obj: any, parentKey?: string): any {
 
   /** ---------- PATCH (forbedret) ---------- */
   const patch = (partial: Partial<Doc>) => {
+    if (doc && projectAccess !== "read") addToHistory(doc);
     setDoc((prev) => {
       if (!prev) return prev;
       if (projectAccess === "read") return prev;
@@ -447,8 +454,7 @@ if (Object.prototype.hasOwnProperty.call(partial, "stepSymbols")) {
         if (stepKeys.length > 0) {
           next.steps = stepKeys
             .sort((a, b) => Number(a) - Number(b))
-            .map((k) => (next.steps as Record<string, any>)[k])
-            .slice(-10);
+            .map((k) => (next.steps as Record<string, any>)[k]);
         }
 
 
@@ -492,6 +498,7 @@ const patchStepField = (
   field: keyof Doc["steps"][0],
   value: string
 ) => {
+  if (doc && projectAccess !== "read") addToHistory(doc);
   setDoc((prev) => {
     if (!prev) return prev;
     if (projectAccess === "read") return prev;
@@ -511,7 +518,7 @@ const patchStepField = (
 // normaliser som i patch(), men SKÅN stepSymbols (må ALDRIG laves til array)
 const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
   if (Array.isArray(obj)) {
-    return obj.slice(-10);
+    return obj.map((value) => normalizeNumericKeys(value));
   }
   if (obj && typeof obj === "object") {
     // ⛔️ Rør ikke stepSymbols – vi skal BEHOLDE "0","1","2" som string-keys
@@ -520,11 +527,10 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
     const keys = Object.keys(obj);
     const numericKeys = keys.filter((k) => /^\d+$/.test(k));
 
-    if (numericKeys.length === keys.length && numericKeys.length > 0) {
+    if (parentKey === "steps" && numericKeys.length === keys.length && numericKeys.length > 0) {
       const arr = numericKeys
         .sort((a, b) => Number(a) - Number(b))
-        .map((k) => (obj as any)[k])
-        .slice(-10);
+        .map((k) => normalizeNumericKeys((obj as any)[k]));
       return arr;
     }
 
@@ -645,6 +651,10 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
         width: "100vw",
         height: "100vh",
         overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        paddingTop: 56,
+        boxSizing: "border-box",
       }}
     >
       {showShare && user && projectAccess === "owner" && (
@@ -657,6 +667,10 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
         onRename={(newTitle) => patch({ title: newTitle })}
         doc={doc}
         patch={patch}
+        onUndo={projectAccess !== "read" ? () => {
+          const previous = undo(doc.id);
+          if (previous) setDoc({ ...previous, updatedAt: Date.now() });
+        } : undefined}
         onShareClick={user && projectAccess === "owner" ? () => setShowShare(true) : undefined}
         onToggleView={() =>
           patch({
@@ -684,10 +698,7 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
       {!user && (
         <div
           style={{
-            position: "fixed",
-            top: 56,
-            left: 0,
-            right: 0,
+            flexShrink: 0,
             background: "#b91c1c",
             color: "#fff",
             padding: "6px 12px",
@@ -785,13 +796,23 @@ const normalizeNumericKeys = (obj: any, parentKey?: string): any => {
         </div>
       )}
 
+      {doc.steps.length > 10 && (
+        <div role="note" data-step-advice style={{
+          flexShrink: 0, padding: "10px 16px", background: "#fff7ed", color: "#7c2d12",
+          borderBottom: "1px solid #fed7aa", fontSize: 14,
+        }}>
+          Din DISSK har {doc.steps.length} trin. Ved flere end 10 trin kan du overveje at opdele
+          arbejdet i flere del-DISSK for at bevare overblikket. Du kan også fortsætte her – alle trin bevares.
+        </div>
+      )}
+
       <div
         ref={scrollRef}
         className="editor-scroll"
         style={{
           width: "100vw",
-          height: "calc(100vh - 56px)",
-          marginTop: 56,
+          flex: 1,
+          minHeight: 0,
           overflow: "auto",
           position: "relative",
           background: "#fff",

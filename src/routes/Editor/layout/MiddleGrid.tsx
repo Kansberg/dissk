@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom"; // ← NY
 import ColumnToolbarOverlay from "./ColumnToolbarOverlay";
 import { Trash2, ArrowLeft, ArrowRight, ArrowLeftRight, RefreshCcw } from "lucide-react";
-import { useUndo } from "../../../context/UndoContext";
 import CustomQuill from "../../../components/CustomQuill";
 
 
@@ -29,7 +28,6 @@ export default function MiddleGrid({
   theme,
 }: Props) {
   const { RADIUS } = theme;
-  const { addToHistory } = useUndo();
 
 const hideTimeout = useRef<NodeJS.Timeout | null>(null);
 
@@ -65,7 +63,6 @@ const setStepSymbol = (stepId: string, sym: StepSymbol | null) => {
   if (sym) next[key] = sym;
   else delete next[key];
 
-  addToHistory(structuredClone(doc));
   patch({ stepSymbols: next } as any);
 
   requestAnimationFrame(() => {
@@ -79,18 +76,8 @@ const setStepSymbol = (stepId: string, sym: StepSymbol | null) => {
 
 
 
-// OUTPUT: direkte refs til contentEditable-bokse
 
-// ✅ Lokalt “hukommelse” for baggrundsfarve pr. kolonne (Tid & ansvar)
-const timeBgRef = useRef<Record<string, string>>({});
-const assumpBgRef = useRef<Record<string, string>>({});
-const midBgRef = useRef<Record<string, string>>({});
-const signBgRef = useRef<Record<string, string>>({});
 
-const outputTimeBgRef = useRef<Record<string, string>>({});
-const outputAssumpBgRef = useRef<Record<string, string>>({});
-const outputMidBgRef = useRef<Record<string, string>>({});
-const outputSignBgRef = useRef<Record<string, string>>({});
 
 
   const [activeCol, setActiveCol] = useState<string | null>(null);
@@ -221,8 +208,6 @@ const handleAddAfter = (afterId: string) => {
   const idx = doc.steps.findIndex((s) => s.id === afterId);
   if (idx === -1) return;
 
-  // Gem tilstand FØR ændringen
-  addToHistory(structuredClone(doc));
 
   const newStep = {
     id: crypto.randomUUID(),
@@ -249,8 +234,6 @@ const handleRemoveSymbol = (stepId: string) => {
   const next: Record<string, "left" | "right" | "both" | "cycle"> = { ...curr };
   delete next[stepId]; // fjern symbolet
 
-  // undo-snapshot
-  addToHistory(structuredClone(doc));
 
   // 👇 Hvis ingen symboler tilbage → nulstil feltet helt
 const hasSymbols = Object.keys(next).length > 0;
@@ -274,8 +257,6 @@ const handleRemove = (id: string) => {
   const confirmed = window.confirm("Er du sikker på, at du vil slette denne kolonne?");
   if (!confirmed) return;
 
-  // Gem tilstand FØR ændringen
-  addToHistory(structuredClone(doc));
 
   const updatedSteps = doc.steps.filter((s) => s.id !== id);
   patch({ steps: updatedSteps });
@@ -289,10 +270,8 @@ const handleDeleteCell = (
   colId: string,
   isOutput = false
 ) => {
-  if (!window.confirm("Vil du slette dette felt permanent?")) return;
+  if (!window.confirm("Vil du skjule dette felt og slette indholdet? Du kan fortryde med Fortryd, s? l?nge projektet er ?bent.")) return;
 
-  // Gem tilstand FØR ændringen
-  addToHistory(structuredClone(doc));
 
   if (!isOutput) {
     const updatedSteps = doc.steps.map((s: any) => {
@@ -351,8 +330,6 @@ const handleDrop = () => {
   const [moved] = reordered.splice(oldIdx, 1);
   reordered.splice(newIdx, 0, moved);
 
-  const next = { ...doc, steps: reordered };
-  addToHistory(next);
   patch({ steps: reordered });
 
   setActiveCol(moved.id);
@@ -581,7 +558,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
       value={s.time || ""}
       onChange={(html: string) => {
         if ((s.time || "") === html) return;
-        addToHistory(doc);
         patchStepField(s.id, "time", html);
       }}
       onFocus={() => setActiveCell({ colId: s.id, type: "time" })}
@@ -589,10 +565,7 @@ const col = gridStartCol + i + symbolOffsetBefore;
         const currentColor = doc.styles?.time?.[s.id]?.bg || "#e5eff5";
         if (color === currentColor) return;
 
-        // ✅ Husk valgt farve lokalt pr. kolonne
-        timeBgRef.current[s.id] = color;
 
-        addToHistory(doc); // snapshot FØR farveskift
         patch({
           styles: {
             ...(doc.styles || {}),
@@ -613,9 +586,7 @@ const col = gridStartCol + i + symbolOffsetBefore;
         ...arrowStyle(col, "2"),
         padding: 0,
         margin: 0,
-        // ✅ Brug lokal farve hvis den findes, ellers styles/doc, ellers default
         background:
-          timeBgRef.current[s.id] ??
           doc.styles?.time?.[s.id]?.bg ??
           "#e5eff5",
         overflow: "visible",
@@ -655,7 +626,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
       value={s.assumption || ""}
       onChange={(html: string) => {
         if ((s.assumption || "") === html) return;
-        addToHistory(doc);
         patchStepField(s.id, "assumption", html);
       }}
       onFocus={() => setActiveCell({ colId: s.id, type: "assump" })}
@@ -663,10 +633,7 @@ const col = gridStartCol + i + symbolOffsetBefore;
         const currentColor = doc.styles?.assump?.[s.id]?.bg || "#f8fafc";
         if (color === currentColor) return;
 
-        // ⭐ Gem valgt farve lokalt (så den ikke hopper tilbage)
-        assumpBgRef.current[s.id] = color;
 
-        addToHistory(doc);
         patch({
           styles: {
             ...(doc.styles || {}),
@@ -685,9 +652,7 @@ const col = gridStartCol + i + symbolOffsetBefore;
       placeholder="Antagelser"
       style={{
         ...cardStyle(col, "4", ""),
-        // ⭐ Brug lokal farve først → ellers db → ellers default
         background:
-          assumpBgRef.current[s.id] ??
           doc.styles?.assump?.[s.id]?.bg ??
           "#f8fafc",
         border: "1px solid #e5e7eb",
@@ -710,7 +675,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
   value={s.title || ""}
   onChange={(html: string) => {
     if ((s.title || "") === html) return;
-    addToHistory(doc);
     patchStepField(s.id, "title", html);
   }}
   onFocus={() => setActiveCell({ colId: s.id, type: "mid" })}
@@ -719,10 +683,7 @@ const col = gridStartCol + i + symbolOffsetBefore;
     const currentColor = doc.styles?.mid?.[s.id]?.bg || "#e0f2fe";
     if (color === currentColor) return;
 
-    // 💚 lokal farve-hukommelse for TRIN
-    midBgRef.current[s.id] = color;
 
-    addToHistory(doc);
     patch({
       styles: {
         ...(doc.styles || {}),
@@ -742,9 +703,7 @@ const col = gridStartCol + i + symbolOffsetBefore;
   placeholder={stepLabelText}
   style={{
     ...cardStyle(col, "6", ""),
-    // 💚 brug lokal farve → ellers db → ellers standard
     background:
-      midBgRef.current[s.id] ??
       doc.styles?.mid?.[s.id]?.bg ??
       "#e0f2fe",
     border: "1px solid #e5e7eb",
@@ -828,7 +787,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
       value={s.sign || ""}
       onChange={(html: string) => {
         if ((s.sign || "") === html) return;
-        addToHistory(doc);
         patchStepField(s.id, "sign", html);
       }}
       onFocus={() => setActiveCell({ colId: s.id, type: "sign" })}
@@ -837,10 +795,7 @@ const col = gridStartCol + i + symbolOffsetBefore;
         const currentColor = doc.styles?.sign?.[s.id]?.bg || "#f8fafc";
         if (color === currentColor) return;
 
-        // 🔴 lokal farve-hukommelse for TEGN
-        signBgRef.current[s.id] = color;
 
-        addToHistory(doc);
         patch({
           styles: {
             ...(doc.styles || {}),
@@ -860,9 +815,7 @@ const col = gridStartCol + i + symbolOffsetBefore;
       placeholder="Tegn"
       style={{
         ...cardStyle(col, "8", ""),
-        // 🔴 brug lokal farve → ellers db → ellers default
         background:
-          signBgRef.current[s.id] ??
           doc.styles?.sign?.[s.id]?.bg ??
           "#f8fafc",
         border: "1px solid #e5e7eb",
@@ -951,7 +904,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
 
           if ((doc.outputTime || "") === html) return;
 
-          addToHistory(doc);
 
           patch({ outputTime: html });
 
@@ -960,8 +912,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
           const current = doc.styles?.outputTime?.bg || "#e5eff5";
           if (current === color) return;
 
-          outputTimeBgRef.current["output"] = color;
-          addToHistory(doc);
           patch({
             styles: {
               ...(doc.styles || {}),
@@ -972,7 +922,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
         style={{
           ...arrowStyle(outputCol, "2"),
           background:
-            outputTimeBgRef.current["output"] ??
             doc.styles?.outputTime?.bg ??
             "#e5eff5",
           border: "1px solid #e5e7eb",
@@ -1005,7 +954,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
 
           if ((doc.outputAssumption || "") === html) return;
 
-          addToHistory(doc);
 
           patch({ outputAssumption: html });
 
@@ -1014,8 +962,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
           const current = doc.styles?.outputAssump?.bg || "#f8fafc";
           if (current === color) return;
 
-          outputAssumpBgRef.current["output"] = color;
-          addToHistory(doc);
           patch({
             styles: {
               ...(doc.styles || {}),
@@ -1026,7 +972,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
         style={{
           ...cardStyle(outputCol, "4", ""),
           background:
-            outputAssumpBgRef.current["output"] ??
             doc.styles?.outputAssump?.bg ??
             "#f8fafc",
           border: "1px solid #e5e7eb",
@@ -1050,7 +995,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
 
       if ((doc.output || "") === html) return;
 
-      addToHistory(doc);
 
       patch({ output: html });
 
@@ -1059,8 +1003,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
       const current = doc.styles?.outputMid?.bg || "#e0f2fe";
       if (current === color) return;
 
-      outputMidBgRef.current["output"] = color;
-      addToHistory(doc);
       patch({
         styles: {
           ...(doc.styles || {}),
@@ -1071,7 +1013,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
     style={{
       ...cardStyle(outputCol, "6", "", true),
       background:
-        outputMidBgRef.current["output"] ??
         doc.styles?.outputMid?.bg ??
         "#e0f2fe",
       border: "1px solid #e5e7eb",
@@ -1101,7 +1042,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
 
           if ((doc.outputSign || "") === html) return;
 
-          addToHistory(doc);
 
           patch({ outputSign: html });
 
@@ -1110,8 +1050,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
           const current = doc.styles?.outputSign?.bg || "#f8fafc";
           if (current === color) return;
 
-          outputSignBgRef.current["output"] = color;
-          addToHistory(doc);
           patch({
             styles: {
               ...(doc.styles || {}),
@@ -1122,7 +1060,6 @@ const col = gridStartCol + i + symbolOffsetBefore;
         style={{
           ...cardStyle(outputCol, "8", ""),
           background:
-            outputSignBgRef.current["output"] ??
             doc.styles?.outputSign?.bg ??
             "#f8fafc",
           border: "1px solid #e5e7eb",

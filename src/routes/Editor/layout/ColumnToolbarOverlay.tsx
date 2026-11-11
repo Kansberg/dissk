@@ -1,7 +1,6 @@
 import { GripVertical, Plus, Trash2, Shapes } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useUndo } from "../../../context/UndoContext";
 
 type Props = {
   targetRef: React.RefObject<HTMLElement>;
@@ -21,7 +20,6 @@ export default function ColumnToolbarOverlay({
   onAddSymbol, // 👈 modtag ny prop
   dragHandleProps,
 }: Props) {
-  const { addToHistory } = useUndo();
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const ro = useRef<ResizeObserver | null>(null);
@@ -132,18 +130,13 @@ setPos({
 
   const handleAdd = () => {
     onAdd();
-    addToHistory?.("Tilføj kolonne");
   };
 
   const handleRemove = () => {
     onRemove();
-    addToHistory?.("Fjern kolonne");
   };
 
 const handleAddSymbolClick = () => {
-  // læg i historik (for undo)
-  addToHistory?.("Tilføj symbol-kolonne");
-
   // MiddleGrid ved allerede hvilken kolonne det handler om
   onAddSymbol?.();
 
